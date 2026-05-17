@@ -19,13 +19,13 @@ export default function TestTransferPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    // Load user's own listings (as seller)
+    fetch('/api/me').then(r => r.json()).then(d => { if (d.id) setBuyerUserId(d.id) }).catch(() => {})
+
     fetch('/api/listings/mine')
       .then(r => r.json())
       .then(d => setListings(d.listings || []))
       .catch(() => {})
 
-    // Load user's own ad accounts (as buyer for testing)
     fetch('/api/meta/assets')
       .then(r => r.json())
       .then(d => {
