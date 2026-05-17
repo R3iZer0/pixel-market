@@ -1,27 +1,43 @@
 # PixelMarket — Build Tasks
 
 ## Phase 1 — Foundation ✅
-- [x] Next.js 14 scaffold
+- [x] Next.js 16 scaffold
 - [x] Supabase schema (all 7 tables + RLS + triggers)
-- [x] TypeScript DB types
+- [x] TypeScript DB types (generated from schema)
 - [x] Supabase browser / server / admin clients
-- [x] Auth middleware (protected routes)
+- [x] Auth proxy / middleware (protected routes)
 - [x] Landing page
 - [x] GitHub repo
+- [x] Vercel production deployment
 
 ---
 
-## Phase 2 — Auth
-- [ ] `/login` page (email + Google + Meta OAuth)
-- [ ] `/signup` page
-- [ ] `/auth/callback` — Supabase OAuth redirect handler
-- [ ] `/auth/meta/callback` — Meta OAuth callback (separate from login Meta connect)
-- [ ] Profile auto-created on signup (trigger already in DB)
-- [ ] Test: login with Meta, verify token stored, verify FB data pulled
+## Phase 2 — Auth ✅
+- [x] `/login` page (email + Google button)
+- [x] `/signup` page (email + Google button)
+- [x] `/auth/callback` — Supabase OAuth redirect handler
+- [x] `/api/auth/meta-connect` — direct FB OAuth (bypasses Supabase email scope conflict)
+- [x] `/api/meta/callback` — FB OAuth callback, exchanges code → short token → long-lived token, stores in profiles
+- [x] `/api/auth/signout`
+- [x] Profile auto-created on signup (trigger fixed: collision-safe, RLS-safe, error-tolerant)
+- [x] Test: Meta login works, FB ad accounts pulled live
+- [x] Dashboard shows ALL pixels + custom audiences + lookalikes + engagement audiences from Meta
+- [ ] Google OAuth button tested (works, untested end-to-end)
+- [ ] Token refresh cron (60-day expiry — must build before launch)
 
 ---
 
-## Phase 3 — Browse & Listings (Public)
+## Phase 2.5 — Meta App Compliance (Legal) ✅
+- [x] `/legal/privacy` — Privacy Policy (Meta-compliant, GDPR/CCPA)
+- [x] `/legal/terms` — Terms of Service
+- [x] `/legal/data-deletion` — User-facing deletion instructions
+- [x] `/api/data-deletion` — Meta signed_request callback endpoint (HMAC-verified)
+- [x] Footer links on landing page
+- [ ] Paste URLs into Meta App Dashboard → Basic Settings (manual step)
+
+---
+
+## Phase 3 — Browse & Listings (PUBLIC)
 - [ ] `/browse` — listings grid with filters
   - [ ] Filter: asset type, source type, event, retention range, category, geo, price range, audience size
   - [ ] Search bar
@@ -32,9 +48,9 @@
 
 ---
 
-## Phase 4 — Listing Creation Wizard (Seller)
+## Phase 4 — Listing Wizard (SELLER) ← **NEXT UP**
 - [ ] `/listings/new` — 5-step wizard
-  - [ ] Step 1: Connect Meta + select asset from live dropdown (pull from Meta API)
+  - [ ] Step 1: Pick asset from live Meta dropdown (pull from Meta API)
   - [ ] Step 2: Source details (dynamic fields per source type — 11 types)
   - [ ] Step 3: Categorize (primary + 2 secondary, geo, niche tags)
   - [ ] Step 4: Pricing (sale / trade / both, price, crypto toggle)
@@ -43,22 +59,21 @@
 
 ---
 
-## Phase 5 — Meta API Integration
-- [ ] `GET /api/meta/assets` — fetch user's pixels + audiences from Meta
-- [ ] `POST /api/meta/connect` — exchange Meta OAuth code → store long-lived token
-- [ ] `POST /api/meta/transfer` — share asset to buyer's ad account (internal, called after payment)
-- [ ] Token refresh cron (daily, Vercel cron) — refresh tokens expiring within 7 days
+## Phase 5 — Meta API Deep Integration
+- [ ] `POST /api/meta/transfer` — share asset to buyer's ad account (called after payment)
+- [ ] Lookalike workaround — share source audience + auto-recreate lookalike on buyer's account
+- [ ] Token refresh cron (Vercel cron, daily) — refresh tokens expiring within 7 days
 - [ ] Auto-pause listings on token failure + notify user
 
 ---
 
 ## Phase 6 — Checkout & Payments
 - [ ] `POST /api/orders` — create order + checkout session
-- [ ] Stripe Connect setup
+- [ ] Stripe Connect
   - [ ] Seller onboarding flow (`/settings` → Connect Stripe)
   - [ ] Stripe Checkout session (card payment)
   - [ ] `POST /api/webhooks/stripe` — handle `payment_intent.succeeded`, transfers, disputes
-- [ ] Coinbase Commerce crypto checkout
+- [ ] Coinbase Commerce crypto
   - [ ] Checkout modal: Card tab / Crypto tab (QR + 15min countdown)
   - [ ] `POST /api/webhooks/coinbase` — handle `charge:confirmed`, `charge:failed`
 - [ ] Order state machine: `pending_payment → paid → transferring → transferred → completed`
@@ -70,7 +85,7 @@
 - [ ] `/orders` — buyer order history
 - [ ] `/sales` — seller incoming orders
 - [ ] `/orders/[id]` — order detail
-  - [ ] Status stepper (pending → paid → transferring → transferred → completed)
+  - [ ] Status stepper
   - [ ] Meta transfer status badge
   - [ ] "Confirm receipt" button (buyer)
   - [ ] "Open dispute" button (buyer, within 7 days of transfer)
@@ -94,7 +109,7 @@
 
 ---
 
-## Phase 10 — Seller Settings & Profile
+## Phase 10 — Settings & Profile
 - [ ] `/settings` — profile edit, Meta connect/disconnect, Stripe Connect, crypto wallet
 - [ ] `/profile/[username]` — public seller profile (listings, rating, reviews)
 - [ ] Meta token expiry banner (shown when token expires < 7 days)
@@ -114,5 +129,17 @@
 - [ ] Loading skeletons on browse + listing detail
 - [ ] SEO: meta tags, OG image per listing
 - [ ] `robots.txt` + sitemap
-- [ ] Vercel deploy + env vars
-- [ ] Supabase: enable email auth + configure OAuth providers in dashboard
+- [ ] Custom domain on Vercel (e.g. pixelmarket.io)
+- [ ] Update `NEXT_PUBLIC_APP_URL` + Meta redirect URIs to custom domain
+- [ ] Supabase: configure email templates (signup confirmation, password reset)
+
+---
+
+## Phase 13 — Meta App Review / Go Live
+- [ ] Meta Business Verification (legal docs, 2–7 days)
+- [ ] App Icon (1024×1024)
+- [ ] Screencast video (1–3 min) per scope: `ads_read`, `ads_management`, `business_management`
+- [ ] Test FB credentials for reviewers
+- [ ] Step-by-step reproduction guide
+- [ ] Submit App Review (5–10 business days)
+- [ ] Switch Meta app from Dev mode → Live
