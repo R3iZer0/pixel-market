@@ -92,8 +92,15 @@ export default function Home() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-gray-100 px-6 py-6 text-center text-sm text-gray-400">
-        © 2026 PixelMarket. 10% fee on all transactions.
+      <footer className="border-t border-gray-100 px-6 py-6">
+        <div className="max-w-4xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3 text-sm text-gray-400">
+          <span>© 2026 PixelMarket. 10% fee on all transactions.</span>
+          <div className="flex gap-4">
+            <Link href="/legal/privacy" className="hover:text-gray-700">Privacy</Link>
+            <Link href="/legal/terms" className="hover:text-gray-700">Terms</Link>
+            <Link href="/legal/data-deletion" className="hover:text-gray-700">Data Deletion</Link>
+          </div>
+        </div>
       </footer>
     </div>
   );
