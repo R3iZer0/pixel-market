@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, KeyboardEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { CATEGORIES, GEO_OPTIONS } from '@/lib/listing-constants'
@@ -65,6 +65,44 @@ function subtypeLabel(s: string): string {
   return map[s] || s
 }
 
+// Tag input — press Enter to add
+function TagInput({
+  values, onChange, placeholder,
+}: { values: string[]; onChange: (v: string[]) => void; placeholder?: string }) {
+  const [draft, setDraft] = useState('')
+  function commit() {
+    const t = draft.trim()
+    if (t && !values.includes(t)) onChange([...values, t])
+    setDraft('')
+  }
+  function onKey(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault()
+      commit()
+    } else if (e.key === 'Backspace' && !draft && values.length) {
+      onChange(values.slice(0, -1))
+    }
+  }
+  return (
+    <div className="flex flex-wrap gap-2 p-2 border border-gray-200 rounded-lg min-h-[42px]">
+      {values.map(v => (
+        <span key={v} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-sm">
+          {v}
+          <button type="button" onClick={() => onChange(values.filter(x => x !== v))} className="text-blue-700 hover:text-red-600">×</button>
+        </span>
+      ))}
+      <input
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onKeyDown={onKey}
+        onBlur={commit}
+        placeholder={placeholder}
+        className="flex-1 min-w-[120px] bg-transparent outline-none text-sm border-none p-0"
+      />
+    </div>
+  )
+}
+
 export default function NewListingPage() {
   const router = useRouter()
   const [step, setStep] = useState(1)
@@ -84,11 +122,15 @@ export default function NewListingPage() {
   const [audienceSize, setAudienceSize] = useState<string>('')
 
   // Pixel-specific
-  const [selectedHosts, setSelectedHosts] = useState<string[]>([])
-  const [extraHosts, setExtraHosts] = useState<string>('')
+  const [websiteTags, setWebsiteTags] = useState<string[]>([])
   const [selectedEvents, setSelectedEvents] = useState<string[]>([])
-  const [pixelAgeDays, setPixelAgeDays] = useState<number | ''>('')
   const [highlightedEvent, setHighlightedEvent] = useState<string>('')
+  const [pixelAgeDays, setPixelAgeDays] = useState<number | ''>('')
+  // Manual event entries (for when API stats are empty)
+  const [manualEvents, setManualEvents] = useState<Array<{ event: string; count: string }>>([])
+
+  // Data-provenance fields
+  const [dataSourceExplanation, setDataSourceExplanation] = useState('')
 
   // Categorize
   const [primaryCategory, setPrimaryCategory] = useState<string>('')
@@ -96,10 +138,8 @@ export default function NewListingPage() {
   const [geo, setGeo] = useState<string[]>([])
   const [niche, setNiche] = useState('')
 
-  // Pricing
-  const [transactionType, setTransactionType] = useState<'sale' | 'trade' | 'both'>('sale')
+  // Pricing — sell-only platform
   const [priceDollars, setPriceDollars] = useState<string>('')
-  const [estValueDollars, setEstValueDollars] = useState<string>('')
   const [acceptsCrypto, setAcceptsCrypto] = useState(false)
 
   useEffect(() => {
@@ -113,7 +153,6 @@ export default function NewListingPage() {
       .catch(e => { setError(String(e)); setLoading(false) })
   }, [])
 
-  // Fetch deep details when selection changes
   useEffect(() => {
     if (!selected) return
     setLoadingDetails(true)
@@ -124,14 +163,12 @@ export default function NewListingPage() {
     fetch(`/api/meta/asset-details?type=${type}&id=${id}`)
       .then(r => r.json())
       .then(d => {
-        if (d.error) { console.error(d.error) }
         if (type === 'pixel') {
           setPixelDetails(d)
-          // pre-select top hosts and all events
-          if (d.hosts_28d) {
-            setSelectedHosts(d.hosts_28d.slice(0, 3).map((h: { host: string }) => h.host))
+          if (d.hosts_28d?.length) {
+            setWebsiteTags(d.hosts_28d.slice(0, 3).map((h: { host: string }) => h.host))
           }
-          if (d.events_28d) {
+          if (d.events_28d?.length) {
             setSelectedEvents(d.events_28d.map((e: { event: string }) => e.event))
             const purchase = d.events_28d.find((e: { event: string }) => e.event === 'Purchase')
             setHighlightedEvent(purchase?.event || d.events_28d[0]?.event || '')
@@ -147,18 +184,20 @@ export default function NewListingPage() {
   const assetType = selected ? assetTypeFor(selected) : null
   const isPixel = assetType === 'pixel'
   const isLookalike = assetType === 'lookalike_audience'
-
-  useEffect(() => { if (isPixel) setTransactionType('sale') }, [isPixel])
+  const isCustomList = selected?.kind === 'audience' && selected.audience.subtype === 'CUSTOM'
+  const isWebsiteAudience = selected?.kind === 'audience' && selected.audience.subtype === 'WEBSITE'
+  const needsExplanation = isLookalike || isCustomList || isWebsiteAudience
 
   function selectPixel(p: MetaPixel) {
     setSelected({ kind: 'pixel', pixel: p })
     setTitle(p.name)
     setDescription('')
     setAudienceSize('')
-    setSelectedHosts([])
-    setExtraHosts('')
+    setWebsiteTags([])
     setSelectedEvents([])
+    setManualEvents([])
     setHighlightedEvent('')
+    setDataSourceExplanation('')
     if (p.creation_time) {
       const ageMs = Date.now() - new Date(p.creation_time).getTime()
       setPixelAgeDays(Math.floor(ageMs / (1000 * 60 * 60 * 24)))
@@ -169,6 +208,7 @@ export default function NewListingPage() {
     setSelected({ kind: 'audience', audience: a })
     setTitle(a.name)
     setDescription(a.description || '')
+    setDataSourceExplanation('')
     if (a.retention_days) setRetentionDays(a.retention_days)
     const size = a.approximate_count_upper_bound ?? a.approximate_count_lower_bound ?? 0
     setAudienceSize(size ? String(size) : '')
@@ -177,6 +217,18 @@ export default function NewListingPage() {
       const c = a.lookalike_spec.country.toUpperCase()
       setGeo(prev => prev.includes(c) ? prev : [...prev, c])
     }
+  }
+
+  function addManualEvent() {
+    setManualEvents([...manualEvents, { event: '', count: '' }])
+  }
+  function updateManualEvent(i: number, field: 'event' | 'count', val: string) {
+    const next = [...manualEvents]
+    next[i] = { ...next[i], [field]: val }
+    setManualEvents(next)
+  }
+  function removeManualEvent(i: number) {
+    setManualEvents(manualEvents.filter((_, x) => x !== i))
   }
 
   async function submit() {
@@ -196,14 +248,17 @@ export default function NewListingPage() {
       audience_source = 'WEBSITE'
       source_name = selected.pixel.name
       source_event = highlightedEvent || null
-      const allHosts = Array.from(new Set([
-        ...selectedHosts,
-        ...extraHosts.split(',').map(s => s.trim()).filter(Boolean),
-      ]))
-      source_url = allHosts[0] ? `https://${allHosts[0]}` : null
+      source_url = websiteTags[0] ? (websiteTags[0].startsWith('http') ? websiteTags[0] : `https://${websiteTags[0]}`) : null
+
+      const autoEvents = pixelDetails?.events_28d?.filter(e => selectedEvents.includes(e.event)) || []
+      const manualClean = manualEvents
+        .filter(e => e.event.trim() && e.count.trim())
+        .map(e => ({ event: e.event.trim(), count: parseInt(e.count) || 0 }))
+
       source_extra = {
-        websites: allHosts,
-        events: pixelDetails?.events_28d?.filter(e => selectedEvents.includes(e.event)) || [],
+        websites: websiteTags,
+        events_auto: autoEvents,
+        events_manual: manualClean,
         events_window_days: 28,
         last_fired_time: selected.pixel.last_fired_time,
         creation_time: selected.pixel.creation_time,
@@ -216,29 +271,32 @@ export default function NewListingPage() {
       audience_source = a.data_source?.type || a.subtype
       source_event = a.data_source?.creation_params?.event_name || null
       source_name = a.name
-      if (a.subtype === 'LOOKALIKE' && a.lookalike_spec) {
-        source_extra = {
-          lookalike_country: a.lookalike_spec.country,
-          lookalike_ratio: a.lookalike_spec.ratio,
-          origin_audiences: a.lookalike_spec.origin,
-          origin_event_source_name: a.lookalike_spec.origin_event_source_name,
-          origin_details: audienceDetails?.origin || null,
-          origin_pixel: audienceDetails?.origin_pixel || null,
-        }
-      } else if (a.data_source) {
-        source_extra = {
-          data_source: a.data_source,
-          parsed_rule: audienceDetails?.parsed_rule || null,
-        }
+
+      const base: Record<string, unknown> = {
+        seller_explanation: dataSourceExplanation || null,
       }
+
+      if (a.subtype === 'LOOKALIKE' && a.lookalike_spec) {
+        base.lookalike_country = a.lookalike_spec.country
+        base.lookalike_ratio = a.lookalike_spec.ratio
+        base.origin_audiences = a.lookalike_spec.origin
+        base.origin_event_source_name = a.lookalike_spec.origin_event_source_name
+        base.origin_details = audienceDetails?.origin || null
+        base.origin_pixel = audienceDetails?.origin_pixel || null
+      } else if (a.data_source) {
+        base.data_source = a.data_source
+        base.parsed_rule = audienceDetails?.parsed_rule || null
+      }
+
+      source_extra = base
     }
 
     const payload = {
       title, description,
       asset_type: assetType,
-      transaction_type: transactionType,
+      transaction_type: 'sale',
       price_cents: priceDollars ? Math.round(parseFloat(priceDollars) * 100) : null,
-      estimated_value_cents: estValueDollars ? Math.round(parseFloat(estValueDollars) * 100) : null,
+      estimated_value_cents: null,
       accepts_crypto: acceptsCrypto,
       meta_asset_id: selected.kind === 'pixel' ? selected.pixel.id : selected.audience.id,
       meta_ad_account_id: selected.kind === 'pixel' ? selected.pixel.ad_account_id : selected.audience.ad_account_id,
@@ -276,6 +334,14 @@ export default function NewListingPage() {
         <Link href="/dashboard" className="text-blue-600 hover:underline">Back to dashboard</Link>
       </div>
     )
+  }
+
+  // Explanation prompt per subtype
+  function explanationPlaceholder() {
+    if (isLookalike) return 'Where did the source audience data come from? e.g. "Built from 30k Purchase events on my Shopify store over 90 days."'
+    if (isCustomList) return 'Where did this customer list come from? e.g. "Email subscribers from my newsletter, opted in via lead magnet."'
+    if (isWebsiteAudience) return 'Which website is this audience built from? e.g. "Visitors to checkout page on store.com, last 30 days."'
+    return ''
   }
 
   return (
@@ -368,7 +434,7 @@ export default function NewListingPage() {
                 <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className="w-full px-3 py-2 border border-gray-200 rounded-lg" />
               </div>
 
-              {/* ──────── PIXEL ──────── */}
+              {/* ───── PIXEL ───── */}
               {selected.kind === 'pixel' && (
                 <>
                   <div className="grid grid-cols-2 gap-3 text-sm">
@@ -390,39 +456,27 @@ export default function NewListingPage() {
                     </div>
                   </div>
 
-                  {/* Hosts / Websites */}
+                  {/* Websites — tag input */}
                   <div>
-                    <label className="block text-sm font-medium mb-2 text-gray-700">
-                      Websites firing this pixel (last 28 days)
-                    </label>
-                    {pixelDetails?.hosts_28d && pixelDetails.hosts_28d.length > 0 ? (
-                      <div className="space-y-1 max-h-48 overflow-auto border border-gray-200 rounded-lg p-2">
-                        {pixelDetails.hosts_28d.map(h => (
-                          <label key={h.host} className="flex items-center gap-2 text-sm p-1 hover:bg-gray-50 rounded">
-                            <input type="checkbox" checked={selectedHosts.includes(h.host)} onChange={e => {
-                              if (e.target.checked) setSelectedHosts([...selectedHosts, h.host])
-                              else setSelectedHosts(selectedHosts.filter(x => x !== h.host))
-                            }} />
-                            <span className="flex-1 text-gray-900 font-mono text-xs">{h.host}</span>
-                            <span className="text-xs text-gray-400">{h.count.toLocaleString()} fires</span>
-                          </label>
+                    <label className="block text-sm font-medium mb-2 text-gray-700">Websites (press Enter to add)</label>
+                    {pixelDetails?.hosts_28d && pixelDetails.hosts_28d.length > 0 && (
+                      <p className="text-xs text-gray-500 mb-2">Suggested from last 28d:
+                        {pixelDetails.hosts_28d.slice(0, 5).map(h => (
+                          <button key={h.host} type="button" onClick={() => {
+                            if (!websiteTags.includes(h.host)) setWebsiteTags([...websiteTags, h.host])
+                          }} className="ml-1 px-2 py-0.5 bg-gray-100 hover:bg-blue-50 rounded text-gray-700 text-xs">
+                            + {h.host} <span className="text-gray-400">({h.count.toLocaleString()})</span>
+                          </button>
                         ))}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-gray-400">
-                        {loadingDetails ? 'Loading…' : 'No host activity in last 28 days.'}
                       </p>
                     )}
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1 text-gray-700">Additional websites (comma-separated)</label>
-                    <input value={extraHosts} onChange={e => setExtraHosts(e.target.value)} placeholder="store2.com, blog.store.com" className="w-full px-3 py-2 border border-gray-200 rounded-lg" />
+                    <TagInput values={websiteTags} onChange={setWebsiteTags} placeholder="store.com" />
                   </div>
 
-                  {/* Events */}
+                  {/* Events — auto from API */}
                   <div>
                     <label className="block text-sm font-medium mb-2 text-gray-700">
-                      Events fired (last 28 days) — pick which to include
+                      Events detected (last 28 days)
                     </label>
                     {pixelDetails?.events_28d && pixelDetails.events_28d.length > 0 ? (
                       <div className="space-y-1 border border-gray-200 rounded-lg p-2 max-h-64 overflow-auto">
@@ -435,19 +489,50 @@ export default function NewListingPage() {
                             <span className="flex-1 text-gray-900">{ev.event}</span>
                             <span className="text-xs text-gray-400">{ev.count.toLocaleString()}</span>
                             <button type="button" onClick={() => setHighlightedEvent(ev.event)} className={`text-xs px-2 py-0.5 rounded ${highlightedEvent === ev.event ? 'bg-blue-600 text-white' : 'border border-gray-200 text-gray-500'}`}>
-                              {highlightedEvent === ev.event ? '★ Featured' : 'Feature'}
+                              {highlightedEvent === ev.event ? '★' : 'Feature'}
                             </button>
                           </label>
                         ))}
                       </div>
                     ) : (
-                      <p className="text-xs text-gray-400">
-                        {loadingDetails ? 'Loading…' : 'No events fired in last 28 days.'}
+                      <p className="text-xs text-gray-400 mb-2">
+                        {loadingDetails ? 'Loading…' : 'No events detected via API. Enter manually below.'}
                       </p>
                     )}
                   </div>
 
-                  {/* Pixel stats footer */}
+                  {/* Manual events */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm font-medium text-gray-700">Manual events (add what you know)</label>
+                      <button type="button" onClick={addManualEvent} className="text-xs text-blue-600 hover:underline">+ Add event</button>
+                    </div>
+                    {manualEvents.length === 0 ? (
+                      <p className="text-xs text-gray-400">None added.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {manualEvents.map((e, i) => (
+                          <div key={i} className="flex gap-2">
+                            <input
+                              value={e.event}
+                              onChange={v => updateManualEvent(i, 'event', v.target.value)}
+                              placeholder="Event name (e.g. Purchase)"
+                              className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                            />
+                            <input
+                              value={e.count}
+                              onChange={v => updateManualEvent(i, 'count', v.target.value)}
+                              placeholder="Count"
+                              type="number"
+                              className="w-32 px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                            />
+                            <button type="button" onClick={() => removeManualEvent(i)} className="px-2 text-gray-400 hover:text-red-600">×</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   {pixelDetails && (
                     <div className="grid grid-cols-3 gap-3 text-sm pt-3 border-t border-gray-100">
                       <div className="p-3 bg-gray-50 rounded">
@@ -467,7 +552,7 @@ export default function NewListingPage() {
                 </>
               )}
 
-              {/* ──────── LOOKALIKE ──────── */}
+              {/* ───── LOOKALIKE ───── */}
               {isLookalike && selected.kind === 'audience' && (
                 <>
                   <div className="grid grid-cols-2 gap-3 text-sm">
@@ -489,41 +574,29 @@ export default function NewListingPage() {
                     </div>
                   </div>
 
-                  {/* Source audience deep info */}
                   {audienceDetails?.origin ? (
                     <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-2 text-sm">
-                      <p className="font-semibold text-gray-900">Source audience</p>
+                      <p className="font-semibold text-gray-900">Source audience (from Meta)</p>
                       <div className="grid grid-cols-2 gap-2">
                         <div><span className="text-gray-500">Name:</span> <span className="text-gray-900">{String(audienceDetails.origin.name || '—')}</span></div>
                         <div><span className="text-gray-500">Subtype:</span> <span className="text-gray-900">{subtypeLabel(String(audienceDetails.origin.subtype || ''))}</span></div>
-                        <div><span className="text-gray-500">Size:</span> <span className="text-gray-900">{Number(audienceDetails.origin.approximate_count_upper_bound || audienceDetails.origin.approximate_count_lower_bound || 0).toLocaleString() || '—'}</span></div>
+                        <div><span className="text-gray-500">Size:</span> <span className="text-gray-900">{Number(audienceDetails.origin.approximate_count_upper_bound || audienceDetails.origin.approximate_count_lower_bound || 0).toLocaleString()}</span></div>
                         <div><span className="text-gray-500">Retention:</span> <span className="text-gray-900">{String(audienceDetails.origin.retention_days || '—')} days</span></div>
                       </div>
                       {audienceDetails.origin_pixel && (
                         <div className="mt-2 pt-2 border-t border-blue-200 text-xs">
                           <p className="text-gray-500">Source pixel:</p>
                           <p className="text-gray-900">{audienceDetails.origin_pixel.name} <span className="font-mono text-gray-400">({audienceDetails.origin_pixel.id})</span></p>
-                          {audienceDetails.origin_pixel.last_fired_time && (
-                            <p className="text-gray-400">Last fired: {new Date(audienceDetails.origin_pixel.last_fired_time).toLocaleDateString()}</p>
-                          )}
                         </div>
                       )}
                     </div>
                   ) : loadingDetails ? (
                     <p className="text-xs text-gray-400">Loading source audience details…</p>
-                  ) : (
-                    selected.audience.lookalike_spec?.origin?.[0] && (
-                      <div className="p-3 bg-gray-50 rounded text-sm">
-                        <p className="text-gray-500 text-xs">Source ref</p>
-                        <p className="text-gray-900">{selected.audience.lookalike_spec.origin[0].name}</p>
-                        <p className="text-gray-400 text-xs font-mono">{selected.audience.lookalike_spec.origin[0].id}</p>
-                      </div>
-                    )
-                  )}
+                  ) : null}
                 </>
               )}
 
-              {/* ──────── CUSTOM / ENGAGEMENT ──────── */}
+              {/* ───── CUSTOM / ENGAGEMENT (non-lookalike audiences) ───── */}
               {!isPixel && !isLookalike && selected.kind === 'audience' && (
                 <>
                   <div className="grid grid-cols-2 gap-3 text-sm">
@@ -543,26 +616,7 @@ export default function NewListingPage() {
                         <p className="text-gray-900 font-mono text-xs">{audienceDetails.base.data_source.creation_params.pixel_id}</p>
                       </div>
                     )}
-                    {audienceDetails?.base?.data_source?.creation_params?.page_id && (
-                      <div className="p-3 bg-gray-50 rounded col-span-2">
-                        <p className="text-gray-500 text-xs">Source page</p>
-                        <p className="text-gray-900 font-mono text-xs">{audienceDetails.base.data_source.creation_params.page_id}</p>
-                      </div>
-                    )}
-                    {audienceDetails?.base?.data_source?.creation_params?.video_id && (
-                      <div className="p-3 bg-gray-50 rounded col-span-2">
-                        <p className="text-gray-500 text-xs">Source video</p>
-                        <p className="text-gray-900 font-mono text-xs">{audienceDetails.base.data_source.creation_params.video_id}</p>
-                      </div>
-                    )}
                   </div>
-
-                  {audienceDetails?.parsed_rule != null && (
-                    <details className="bg-gray-50 rounded p-3 text-xs">
-                      <summary className="cursor-pointer text-gray-700 font-medium">Audience rule (raw)</summary>
-                      <pre className="mt-2 text-gray-600 overflow-auto">{JSON.stringify(audienceDetails.parsed_rule, null, 2)}</pre>
-                    </details>
-                  )}
 
                   <div>
                     <label className="block text-sm font-medium mb-1 text-gray-700">Audience size</label>
@@ -574,11 +628,34 @@ export default function NewListingPage() {
                   </div>
                 </>
               )}
+
+              {/* Where did the data come from (lookalike, custom list, website audience) */}
+              {needsExplanation && (
+                <div>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">
+                    {isLookalike && 'Where did the source data come from? (Required)'}
+                    {isCustomList && 'Where did this customer list come from? (Required)'}
+                    {isWebsiteAudience && 'Which website is this audience built from? (Required)'}
+                  </label>
+                  <textarea
+                    value={dataSourceExplanation}
+                    onChange={e => setDataSourceExplanation(e.target.value)}
+                    rows={3}
+                    placeholder={explanationPlaceholder()}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">Buyers want to know provenance. Be specific.</p>
+                </div>
+              )}
             </div>
 
             <div className="flex justify-between mt-6">
               <button onClick={() => setStep(1)} className="px-6 py-2 border border-gray-200 rounded-lg">← Back</button>
-              <button onClick={() => setStep(3)} className="px-6 py-2 bg-blue-600 text-white rounded-lg">Next →</button>
+              <button
+                disabled={needsExplanation && !dataSourceExplanation.trim()}
+                onClick={() => setStep(3)}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg disabled:opacity-50"
+              >Next →</button>
             </div>
           </div>
         )}
@@ -638,42 +715,17 @@ export default function NewListingPage() {
           </div>
         )}
 
-        {/* STEP 4 — Pricing */}
+        {/* STEP 4 — Pricing (sale only) */}
         {step === 4 && (
           <div>
             <h1 className="text-2xl font-bold mb-2 text-gray-900">Pricing</h1>
-            <p className="text-gray-500 mb-6">10% platform fee on all transactions.</p>
+            <p className="text-gray-500 mb-6">10% platform fee. Sale only.</p>
             <div className="space-y-4 bg-white rounded-lg border border-gray-200 p-6">
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-700">Transaction type</label>
-                {isPixel ? (
-                  <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700">
-                    Sale only (pixels cannot be traded)
-                  </div>
-                ) : (
-                  <div className="flex gap-2">
-                    {(['sale', 'trade', 'both'] as const).map(t => (
-                      <button key={t} onClick={() => setTransactionType(t)} className={`flex-1 px-3 py-2 border rounded-lg text-sm capitalize ${transactionType === t ? 'bg-blue-50 border-blue-400 text-blue-700' : 'border-gray-200 text-gray-700'}`}>{t}</button>
-                    ))}
-                  </div>
-                )}
+                <label className="block text-sm font-medium mb-1 text-gray-700">Sale price (USD)</label>
+                <input type="number" min={0} step={0.01} value={priceDollars} onChange={e => setPriceDollars(e.target.value)} placeholder="e.g. 199.00" className="w-full px-3 py-2 border border-gray-200 rounded-lg" />
+                {priceDollars && <p className="text-xs text-gray-500 mt-1">You receive: ${(parseFloat(priceDollars) * 0.9).toFixed(2)} (after 10% fee)</p>}
               </div>
-
-              {(transactionType === 'sale' || transactionType === 'both') && (
-                <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Price (USD)</label>
-                  <input type="number" min={0} step={0.01} value={priceDollars} onChange={e => setPriceDollars(e.target.value)} placeholder="e.g. 199.00" className="w-full px-3 py-2 border border-gray-200 rounded-lg" />
-                  {priceDollars && <p className="text-xs text-gray-500 mt-1">You receive: ${(parseFloat(priceDollars) * 0.9).toFixed(2)} (after 10% fee)</p>}
-                </div>
-              )}
-
-              {!isPixel && (transactionType === 'trade' || transactionType === 'both') && (
-                <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Estimated value (USD, for trade fee calc)</label>
-                  <input type="number" min={0} step={0.01} value={estValueDollars} onChange={e => setEstValueDollars(e.target.value)} placeholder="e.g. 500.00" className="w-full px-3 py-2 border border-gray-200 rounded-lg" />
-                </div>
-              )}
-
               <label className="flex items-center gap-2 text-gray-700">
                 <input type="checkbox" checked={acceptsCrypto} onChange={e => setAcceptsCrypto(e.target.checked)} />
                 <span className="text-sm">Accept crypto (BTC, ETH, USDC, USDT, SOL, LTC)</span>
@@ -681,7 +733,7 @@ export default function NewListingPage() {
             </div>
             <div className="flex justify-between mt-6">
               <button onClick={() => setStep(3)} className="px-6 py-2 border border-gray-200 rounded-lg">← Back</button>
-              <button onClick={() => setStep(5)} className="px-6 py-2 bg-blue-600 text-white rounded-lg">Next →</button>
+              <button disabled={!priceDollars} onClick={() => setStep(5)} className="px-6 py-2 bg-blue-600 text-white rounded-lg disabled:opacity-50">Next →</button>
             </div>
           </div>
         )}
@@ -699,22 +751,26 @@ export default function NewListingPage() {
               {isPixel && (
                 <>
                   {pixelAgeDays !== '' && <div className="flex justify-between"><span className="text-gray-500">Pixel age</span><span className="text-gray-900">{pixelAgeDays} days</span></div>}
+                  {websiteTags.length > 0 && <div className="flex justify-between"><span className="text-gray-500">Websites</span><span className="text-gray-900">{websiteTags.join(', ')}</span></div>}
                   {highlightedEvent && <div className="flex justify-between"><span className="text-gray-500">Featured event</span><span className="text-gray-900">{highlightedEvent}</span></div>}
-                  {selectedEvents.length > 0 && <div className="flex justify-between"><span className="text-gray-500">Events included</span><span className="text-gray-900">{selectedEvents.length}</span></div>}
-                  {(selectedHosts.length + extraHosts.split(',').filter(Boolean).length) > 0 && (
-                    <div className="flex justify-between"><span className="text-gray-500">Websites</span><span className="text-gray-900">{selectedHosts.length + extraHosts.split(',').filter(s => s.trim()).length}</span></div>
+                  {(selectedEvents.length + manualEvents.filter(e => e.event.trim()).length) > 0 && (
+                    <div className="flex justify-between"><span className="text-gray-500">Events</span><span className="text-gray-900">{selectedEvents.length + manualEvents.filter(e => e.event.trim()).length}</span></div>
                   )}
                 </>
               )}
 
               {!isPixel && <div className="flex justify-between"><span className="text-gray-500">Retention</span><span className="text-gray-900">{retentionDays} days</span></div>}
               {audienceSize && <div className="flex justify-between"><span className="text-gray-500">Size</span><span className="text-gray-900">{parseInt(audienceSize).toLocaleString()}</span></div>}
+              {dataSourceExplanation && (
+                <div className="pt-2 border-t border-gray-100">
+                  <p className="text-gray-500 text-xs mb-1">Data source explanation</p>
+                  <p className="text-gray-900">{dataSourceExplanation}</p>
+                </div>
+              )}
               {primaryCategory && <div className="flex justify-between"><span className="text-gray-500">Category</span><span className="text-gray-900">{primaryCategory}</span></div>}
               {geo.length > 0 && <div className="flex justify-between"><span className="text-gray-500">Geo</span><span className="text-gray-900">{geo.join(', ')}</span></div>}
               {niche && <div className="flex justify-between"><span className="text-gray-500">Niche</span><span className="text-gray-900">{niche}</span></div>}
-              <div className="flex justify-between"><span className="text-gray-500">Transaction</span><span className="capitalize text-gray-900">{transactionType}</span></div>
               {priceDollars && <div className="flex justify-between"><span className="text-gray-500">Price</span><span className="text-gray-900">${priceDollars}</span></div>}
-              {estValueDollars && <div className="flex justify-between"><span className="text-gray-500">Est. value</span><span className="text-gray-900">${estValueDollars}</span></div>}
               {acceptsCrypto && <div className="flex justify-between"><span className="text-gray-500">Crypto</span><span className="text-gray-900">Accepted</span></div>}
             </div>
             <div className="flex justify-between mt-6">
