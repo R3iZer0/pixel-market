@@ -1,10 +1,7 @@
 'use client'
 
-export const dynamic = 'force-dynamic'
-
 import { useState } from 'react'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
 export default function LoginPage() {
@@ -13,12 +10,17 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
-  const supabase = createClient()
+
+  async function getClient() {
+    const { createClient } = await import('@/lib/supabase/client')
+    return createClient()
+  }
 
   async function handleEmail(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     setError(null)
+    const supabase = await getClient()
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) { setError(error.message); setLoading(false); return }
     router.push('/dashboard')
@@ -27,6 +29,7 @@ export default function LoginPage() {
 
   async function handleGoogle() {
     setLoading(true)
+    const supabase = await getClient()
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: `${location.origin}/auth/callback` },
@@ -35,6 +38,7 @@ export default function LoginPage() {
 
   async function handleMeta() {
     setLoading(true)
+    const supabase = await getClient()
     await supabase.auth.signInWithOAuth({
       provider: 'facebook',
       options: {
@@ -53,7 +57,6 @@ export default function LoginPage() {
 
         <h1 className="text-xl font-semibold text-gray-900 mb-6 text-center">Welcome back</h1>
 
-        {/* OAuth buttons */}
         <div className="flex flex-col gap-3 mb-6">
           <button
             onClick={handleMeta}
@@ -87,7 +90,6 @@ export default function LoginPage() {
           <div className="relative flex justify-center text-xs text-gray-400 bg-white px-2">or</div>
         </div>
 
-        {/* Email form */}
         <form onSubmit={handleEmail} className="flex flex-col gap-4">
           {error && (
             <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</div>
