@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
 
-const MAX_BYTES = 8 * 1024 * 1024 // 8 MB
+const MAX_BYTES = 8 * 1024 * 1024
 const ALLOWED = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
 
 export async function POST(request: Request) {
@@ -28,7 +28,10 @@ export async function POST(request: Request) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  const { data: pub } = admin.storage.from('listing-proofs').getPublicUrl(path)
+  // Generate signed URL for immediate preview (1 hour)
+  const { data: signed } = await admin.storage
+    .from('listing-proofs')
+    .createSignedUrl(path, 3600)
 
-  return NextResponse.json({ url: pub.publicUrl, path })
+  return NextResponse.json({ path, preview_url: signed?.signedUrl })
 }

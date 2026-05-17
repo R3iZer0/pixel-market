@@ -138,8 +138,8 @@ export default function NewListingPage() {
   const [geo, setGeo] = useState<string[]>([])
   const [niche, setNiche] = useState('')
 
-  // Proof screenshots — keyed by slot
-  const [proofs, setProofs] = useState<Record<string, string[]>>({})
+  // Proof screenshots — keyed by slot, stores { path, preview_url }
+  const [proofs, setProofs] = useState<Record<string, Array<{ path: string; preview_url: string }>>>({})
   const [uploading, setUploading] = useState<string | null>(null)
 
   // Pricing — sell-only platform
@@ -238,22 +238,22 @@ export default function NewListingPage() {
   async function uploadFiles(slot: string, files: FileList | null) {
     if (!files || files.length === 0) return
     setUploading(slot)
-    const urls: string[] = []
+    const added: Array<{ path: string; preview_url: string }> = []
     for (const file of Array.from(files)) {
       const fd = new FormData()
       fd.append('file', file)
       fd.append('slot', slot)
       const res = await fetch('/api/upload/proof', { method: 'POST', body: fd })
       const d = await res.json()
-      if (d.url) urls.push(d.url)
+      if (d.path && d.preview_url) added.push({ path: d.path, preview_url: d.preview_url })
       else setError(d.error || 'Upload failed')
     }
-    setProofs(prev => ({ ...prev, [slot]: [...(prev[slot] || []), ...urls] }))
+    setProofs(prev => ({ ...prev, [slot]: [...(prev[slot] || []), ...added] }))
     setUploading(null)
   }
 
-  function removeProof(slot: string, url: string) {
-    setProofs(prev => ({ ...prev, [slot]: (prev[slot] || []).filter(u => u !== url) }))
+  function removeProof(slot: string, path: string) {
+    setProofs(prev => ({ ...prev, [slot]: (prev[slot] || []).filter(p => p.path !== path) }))
   }
 
   async function submit() {
@@ -290,7 +290,7 @@ export default function NewListingPage() {
         pixel_age_days: pixelAgeDays || null,
         shared_with_accounts: pixelDetails?.shared_accounts?.length || 0,
         audiences_built_from: pixelDetails?.audiences_built?.length || 0,
-        proofs,
+        proofs: Object.fromEntries(Object.entries(proofs).map(([k, v]) => [k, v.map(p => p.path)])),
       }
     } else {
       const a = selected.audience
@@ -300,7 +300,7 @@ export default function NewListingPage() {
 
       const base: Record<string, unknown> = {
         seller_explanation: dataSourceExplanation || null,
-        proofs,
+        proofs: Object.fromEntries(Object.entries(proofs).map(([k, v]) => [k, v.map(p => p.path)])),
       }
 
       if (a.subtype === 'LOOKALIKE' && a.lookalike_spec) {
@@ -770,13 +770,13 @@ export default function NewListingPage() {
 
                     {(proofs[slot.key] || []).length > 0 && (
                       <div className="grid grid-cols-3 gap-2 mb-3">
-                        {(proofs[slot.key] || []).map(url => (
+                        {(proofs[slot.key] || []).map(p => (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <div key={url} className="relative group">
-                            <img src={url} alt="proof" className="w-full h-32 object-cover rounded border border-gray-200" />
+                          <div key={p.path} className="relative group">
+                            <img src={p.preview_url} alt="proof" className="w-full h-32 object-cover rounded border border-gray-200" />
                             <button
                               type="button"
-                              onClick={() => removeProof(slot.key, url)}
+                              onClick={() => removeProof(slot.key, p.path)}
                               className="absolute top-1 right-1 bg-black/70 text-white text-xs px-2 py-0.5 rounded opacity-0 group-hover:opacity-100"
                             >×</button>
                           </div>
