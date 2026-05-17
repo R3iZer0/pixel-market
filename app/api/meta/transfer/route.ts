@@ -109,70 +109,13 @@ export async function POST(request: Request) {
       }
     }
     else if (listing.asset_type === 'lookalike_audience') {
-      // Two-step:
-      // 1. Share source audience to buyer's account (seller's token)
-      // 2. Recreate lookalike on buyer's account (buyer's token)
-
-      type LookalikeExtra = {
-        origin_audiences?: Array<{ id: string; name?: string; type?: string }>
-        lookalike_country?: string
-        lookalike_ratio?: number
-      }
-      const extra = (listing.source_extra as LookalikeExtra) || {}
-      let originAudienceId = extra.origin_audiences?.[0]?.id
-      let lookalikeCountry = extra.lookalike_country
-      let lookalikeRatio = extra.lookalike_ratio
-
-      // Fallback: fetch live from Meta if missing in stored extra
-      if (!originAudienceId || !lookalikeCountry || lookalikeRatio == null) {
-        const live = await fbCall('GET', `/${listing.meta_asset_id}?fields=lookalike_spec`, seller.meta_access_token)
-        const spec = live?.lookalike_spec as { origin?: Array<{ id: string }>; country?: string; ratio?: number } | undefined
-        if (spec?.origin?.[0]?.id) originAudienceId = spec.origin[0].id
-        if (spec?.country) lookalikeCountry = spec.country
-        if (spec?.ratio != null) lookalikeRatio = spec.ratio
-        if (!originAudienceId) {
-          return NextResponse.json({
-            error: 'Lookalike source audience ID could not be resolved from stored data or Meta API',
-            live_spec: live,
-          }, { status: 400 })
-        }
-      }
-
-      // Need buyer's token for step 2
-      let buyerToken: string | null = null
-      if (body.buyer_user_id) {
-        const { data: buyer } = await admin
-          .from('profiles')
-          .select('meta_access_token')
-          .eq('id', body.buyer_user_id)
-          .single()
-        buyerToken = buyer?.meta_access_token || null
-      }
-      if (!buyerToken) {
-        return NextResponse.json({ error: 'Lookalike transfer requires buyer Meta connection (buyer_user_id missing or buyer not connected)' }, { status: 400 })
-      }
-
-      // Step 1: share source audience to buyer's account
-      const shareRes = await fbCall('POST', `/${originAudienceId}/adaccounts`, seller.meta_access_token, {
+      // Lookalikes ARE custom audiences (subtype=LOOKALIKE) — share directly.
+      // Buyer uses it as-is for targeting. Can't refresh, but doesn't need to.
+      const res = await fbCall('POST', `/${listing.meta_asset_id}/adaccounts`, seller.meta_access_token, {
         adaccount_id: buyerAcct,
       })
-      if (shareRes.error) {
-        return NextResponse.json({ error: `Source audience share failed: ${shareRes.error.message}`, step: 'share_source' }, { status: 400 })
-      }
-
-      // Step 2: create lookalike on buyer's account
-      const createRes = await fbCall('POST', `/${buyerAcct}/customaudiences`, buyerToken, {
-        name: `[Bought] ${listing.title}`,
-        subtype: 'LOOKALIKE',
-        origin_audience_id: originAudienceId,
-        lookalike_spec: JSON.stringify({
-          type: 'custom_ratio',
-          ratio: lookalikeRatio || 0.01,
-          country: lookalikeCountry || 'US',
-        }),
-      })
-      transferResult = { share: shareRes, create: createRes }
-      if (createRes.error) { transferStatus = 'failed'; transferError = createRes.error.message }
+      transferResult = res
+      if (res.error) { transferStatus = 'failed'; transferError = res.error.message }
     }
     else {
       return NextResponse.json({ error: `Unknown asset_type: ${listing.asset_type}` }, { status: 400 })
