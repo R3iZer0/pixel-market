@@ -49,8 +49,8 @@ async function fbGet<T>(path: string, token: string): Promise<T | { error: { mes
   return await res.json()
 }
 
-const PIXEL_FIELDS = 'id,name,creation_time,last_fired_time,is_unavailable,owner_ad_account{id,name},owner_business{id,name}'
-const AUDIENCE_FIELDS = 'id,name,subtype,approximate_count_lower_bound,approximate_count_upper_bound,retention_days,description,time_created,time_updated,data_source,rule,rule_aggregation,lookalike_spec,operation_status,delivery_status'
+const PIXEL_FIELDS = 'id,name,creation_time,last_fired_time'
+const AUDIENCE_FIELDS = 'id,name,subtype,approximate_count_lower_bound,approximate_count_upper_bound,retention_days,description,time_created,time_updated,data_source,lookalike_spec,operation_status'
 
 export async function GET() {
   const supabase = await createClient()
