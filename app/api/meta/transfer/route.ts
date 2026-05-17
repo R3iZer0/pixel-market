@@ -119,9 +119,23 @@ export async function POST(request: Request) {
         lookalike_ratio?: number
       }
       const extra = (listing.source_extra as LookalikeExtra) || {}
-      const originAudienceId = extra.origin_audiences?.[0]?.id
-      if (!originAudienceId) {
-        return NextResponse.json({ error: 'Lookalike source audience ID missing from listing' }, { status: 400 })
+      let originAudienceId = extra.origin_audiences?.[0]?.id
+      let lookalikeCountry = extra.lookalike_country
+      let lookalikeRatio = extra.lookalike_ratio
+
+      // Fallback: fetch live from Meta if missing in stored extra
+      if (!originAudienceId || !lookalikeCountry || lookalikeRatio == null) {
+        const live = await fbCall('GET', `/${listing.meta_asset_id}?fields=lookalike_spec`, seller.meta_access_token)
+        const spec = live?.lookalike_spec as { origin?: Array<{ id: string }>; country?: string; ratio?: number } | undefined
+        if (spec?.origin?.[0]?.id) originAudienceId = spec.origin[0].id
+        if (spec?.country) lookalikeCountry = spec.country
+        if (spec?.ratio != null) lookalikeRatio = spec.ratio
+        if (!originAudienceId) {
+          return NextResponse.json({
+            error: 'Lookalike source audience ID could not be resolved from stored data or Meta API',
+            live_spec: live,
+          }, { status: 400 })
+        }
       }
 
       // Need buyer's token for step 2
@@ -153,8 +167,8 @@ export async function POST(request: Request) {
         origin_audience_id: originAudienceId,
         lookalike_spec: JSON.stringify({
           type: 'custom_ratio',
-          ratio: extra.lookalike_ratio || 0.01,
-          country: extra.lookalike_country || 'US',
+          ratio: lookalikeRatio || 0.01,
+          country: lookalikeCountry || 'US',
         }),
       })
       transferResult = { share: shareRes, create: createRes }
