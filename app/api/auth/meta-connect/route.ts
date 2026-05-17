@@ -3,18 +3,20 @@ import { NextResponse } from 'next/server'
 
 export async function GET() {
   const supabase = await createClient()
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: 'facebook',
-    options: {
-      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
-      scopes: 'ads_read,business_management,ads_management',
-      queryParams: { auth_type: 'reauthenticate' },
-    },
-  })
+  const { data: { user } } = await supabase.auth.getUser()
 
-  if (error || !data.url) {
-    return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/dashboard?error=meta_connect_failed`)
+  if (!user) {
+    return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/login`)
   }
 
-  return NextResponse.redirect(data.url)
+  // Direct Facebook OAuth — bypasses Supabase to avoid the auto-added email scope
+  const params = new URLSearchParams({
+    client_id: process.env.META_APP_ID!,
+    redirect_uri: `${process.env.NEXT_PUBLIC_APP_URL}/api/meta/callback`,
+    scope: 'ads_read,ads_management,business_management',
+    response_type: 'code',
+    state: user.id, // pass user id through state so callback knows which profile to update
+  })
+
+  return NextResponse.redirect(`https://www.facebook.com/v19.0/dialog/oauth?${params.toString()}`)
 }
