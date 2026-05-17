@@ -72,8 +72,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Seller Meta token expired' }, { status: 400 })
   }
 
-  // Buyer ad account must be prefixed with act_
+  // Two formats needed: with act_ prefix (for path segment) and raw numeric (for adaccounts array)
   const buyerAcct = body.buyer_ad_account_id.startsWith('act_') ? body.buyer_ad_account_id : `act_${body.buyer_ad_account_id}`
+  const buyerAcctNum = buyerAcct.replace(/^act_/, '')
 
   let transferResult: Record<string, unknown> = {}
   let transferStatus: 'sent' | 'failed' = 'sent'
@@ -100,7 +101,7 @@ export async function POST(request: Request) {
       // Meta wants `adaccounts` as a JSON array of ad account IDs.
       // Lookalikes are also custom audiences (subtype=LOOKALIKE) — same endpoint works.
       const res = await fbCall('POST', `/${listing.meta_asset_id}/adaccounts`, seller.meta_access_token, {
-        adaccounts: [buyerAcct],
+        adaccounts: [buyerAcctNum],
       })
       transferResult = res
       if (res.error) { transferStatus = 'failed'; transferError = res.error.message }
