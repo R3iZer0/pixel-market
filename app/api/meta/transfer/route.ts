@@ -92,30 +92,23 @@ export async function POST(request: Request) {
       transferResult = res
       if (res.error) { transferStatus = 'failed'; transferError = res.error.message }
     }
-    else if (listing.asset_type === 'custom_audience' || listing.asset_type === 'engagement_audience') {
+    else if (
+      listing.asset_type === 'custom_audience' ||
+      listing.asset_type === 'engagement_audience' ||
+      listing.asset_type === 'lookalike_audience'
+    ) {
+      // Meta wants `adaccounts` as a JSON array of ad account IDs.
+      // Lookalikes are also custom audiences (subtype=LOOKALIKE) — same endpoint works.
       const res = await fbCall('POST', `/${listing.meta_asset_id}/adaccounts`, seller.meta_access_token, {
-        adaccount_id: buyerAcct,
-        relationship_type: ['IN_BUSINESS'],
-        permissions: ['CAN_EDIT'],
-      })
-      transferResult = res
-      if (res.error) {
-        // Try simpler form
-        const retry = await fbCall('POST', `/${listing.meta_asset_id}/adaccounts`, seller.meta_access_token, {
-          adaccount_id: buyerAcct,
-        })
-        transferResult = retry
-        if (retry.error) { transferStatus = 'failed'; transferError = retry.error.message }
-      }
-    }
-    else if (listing.asset_type === 'lookalike_audience') {
-      // Lookalikes ARE custom audiences (subtype=LOOKALIKE) — share directly.
-      // Buyer uses it as-is for targeting. Can't refresh, but doesn't need to.
-      const res = await fbCall('POST', `/${listing.meta_asset_id}/adaccounts`, seller.meta_access_token, {
-        adaccount_id: buyerAcct,
+        adaccounts: [buyerAcct],
       })
       transferResult = res
       if (res.error) { transferStatus = 'failed'; transferError = res.error.message }
+      // Empty `sharing_data: []` with success=true means Meta silently no-op'd —
+      // typically because the buyer account already has the audience.
+      else if (Array.isArray(res.sharing_data) && res.sharing_data.length === 0) {
+        transferResult = { ...res, note: 'Empty sharing_data — audience may already exist on buyer account OR Meta no-op for same-owner accounts.' }
+      }
     }
     else {
       return NextResponse.json({ error: `Unknown asset_type: ${listing.asset_type}` }, { status: 400 })
