@@ -138,6 +138,10 @@ export default function NewListingPage() {
   const [geo, setGeo] = useState<string[]>([])
   const [niche, setNiche] = useState('')
 
+  // Proof screenshots — keyed by slot
+  const [proofs, setProofs] = useState<Record<string, string[]>>({})
+  const [uploading, setUploading] = useState<string | null>(null)
+
   // Pricing — sell-only platform
   const [priceDollars, setPriceDollars] = useState<string>('')
   const [acceptsCrypto, setAcceptsCrypto] = useState(false)
@@ -231,6 +235,27 @@ export default function NewListingPage() {
     setManualEvents(manualEvents.filter((_, x) => x !== i))
   }
 
+  async function uploadFiles(slot: string, files: FileList | null) {
+    if (!files || files.length === 0) return
+    setUploading(slot)
+    const urls: string[] = []
+    for (const file of Array.from(files)) {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('slot', slot)
+      const res = await fetch('/api/upload/proof', { method: 'POST', body: fd })
+      const d = await res.json()
+      if (d.url) urls.push(d.url)
+      else setError(d.error || 'Upload failed')
+    }
+    setProofs(prev => ({ ...prev, [slot]: [...(prev[slot] || []), ...urls] }))
+    setUploading(null)
+  }
+
+  function removeProof(slot: string, url: string) {
+    setProofs(prev => ({ ...prev, [slot]: (prev[slot] || []).filter(u => u !== url) }))
+  }
+
   async function submit() {
     if (!selected) return
     setLoading(true)
@@ -265,6 +290,7 @@ export default function NewListingPage() {
         pixel_age_days: pixelAgeDays || null,
         shared_with_accounts: pixelDetails?.shared_accounts?.length || 0,
         audiences_built_from: pixelDetails?.audiences_built?.length || 0,
+        proofs,
       }
     } else {
       const a = selected.audience
@@ -274,6 +300,7 @@ export default function NewListingPage() {
 
       const base: Record<string, unknown> = {
         seller_explanation: dataSourceExplanation || null,
+        proofs,
       }
 
       if (a.subtype === 'LOOKALIKE' && a.lookalike_spec) {
@@ -348,12 +375,12 @@ export default function NewListingPage() {
     <div className="min-h-screen">
       <nav className="border-b border-gray-100 px-6 py-4 flex items-center justify-between">
         <Link href="/dashboard" className="text-xl font-bold text-blue-600">PixelMarket</Link>
-        <div className="text-sm text-gray-500">Step {step} of 5</div>
+        <div className="text-sm text-gray-500">Step {step} of 6</div>
       </nav>
 
       <div className="max-w-3xl mx-auto px-6 py-8">
         <div className="flex items-center gap-2 mb-8">
-          {[1, 2, 3, 4, 5].map(n => (
+          {[1, 2, 3, 4, 5, 6].map(n => (
             <div key={n} className={`h-1 flex-1 rounded ${n <= step ? 'bg-blue-600' : 'bg-gray-200'}`} />
           ))}
         </div>
@@ -715,8 +742,80 @@ export default function NewListingPage() {
           </div>
         )}
 
-        {/* STEP 4 — Pricing (sale only) */}
-        {step === 4 && (
+        {/* STEP 4 — Proof screenshots */}
+        {step === 4 && selected && (() => {
+          const slots = isPixel
+            ? [
+                { key: 'events_manager', label: 'Events Manager — events firing', required: true, hint: 'Screenshot of Events Manager showing your events list with counts.' },
+                { key: 'websites_traffic', label: 'Website traffic / domain breakdown', required: false, hint: 'Optional: screenshot showing which domains are firing the pixel.' },
+              ]
+            : [
+                { key: 'summary_panel', label: 'Audience summary panel', required: true, hint: 'Screenshot of the audience details panel in Ads Manager.' },
+                { key: 'campaigns_used', label: 'Campaigns this audience was used in', required: true, hint: 'Screenshot of Ads Manager filtered by this audience showing campaigns.' },
+                { key: 'history', label: 'Audience history / timeline', required: false, hint: 'Optional: screenshot showing how the audience grew over time.' },
+              ]
+          const missingRequired = slots.some(s => s.required && (proofs[s.key] || []).length === 0)
+          return (
+            <div>
+              <h1 className="text-2xl font-bold mb-2 text-gray-900">Proof screenshots</h1>
+              <p className="text-gray-500 mb-6">Upload screenshots backing up the claims you made. Builds buyer trust.</p>
+              <div className="space-y-6">
+                {slots.map(slot => (
+                  <div key={slot.key} className="bg-white border border-gray-200 rounded-lg p-5">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="font-semibold text-gray-900">{slot.label}</h3>
+                      {slot.required && <span className="text-xs text-red-500">Required</span>}
+                    </div>
+                    <p className="text-xs text-gray-500 mb-3">{slot.hint}</p>
+
+                    {(proofs[slot.key] || []).length > 0 && (
+                      <div className="grid grid-cols-3 gap-2 mb-3">
+                        {(proofs[slot.key] || []).map(url => (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <div key={url} className="relative group">
+                            <img src={url} alt="proof" className="w-full h-32 object-cover rounded border border-gray-200" />
+                            <button
+                              type="button"
+                              onClick={() => removeProof(slot.key, url)}
+                              className="absolute top-1 right-1 bg-black/70 text-white text-xs px-2 py-0.5 rounded opacity-0 group-hover:opacity-100"
+                            >×</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <label className="inline-block">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        disabled={uploading === slot.key}
+                        onChange={e => uploadFiles(slot.key, e.target.files)}
+                        className="hidden"
+                      />
+                      <span className="px-3 py-1.5 border border-gray-200 rounded text-sm text-gray-700 cursor-pointer hover:bg-gray-50">
+                        {uploading === slot.key ? 'Uploading…' : '+ Add screenshot(s)'}
+                      </span>
+                    </label>
+                    <p className="text-xs text-gray-400 mt-2">PNG/JPG/WebP, 8MB max each.</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex justify-between mt-6">
+                <button onClick={() => setStep(3)} className="px-6 py-2 border border-gray-200 rounded-lg">← Back</button>
+                <button
+                  disabled={missingRequired || uploading !== null}
+                  onClick={() => setStep(5)}
+                  className="px-6 py-2 bg-blue-600 text-white rounded-lg disabled:opacity-50"
+                >Next →</button>
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* STEP 5 — Pricing (sale only) */}
+        {step === 5 && (
           <div>
             <h1 className="text-2xl font-bold mb-2 text-gray-900">Pricing</h1>
             <p className="text-gray-500 mb-6">10% platform fee. Sale only.</p>
@@ -732,14 +831,14 @@ export default function NewListingPage() {
               </label>
             </div>
             <div className="flex justify-between mt-6">
-              <button onClick={() => setStep(3)} className="px-6 py-2 border border-gray-200 rounded-lg">← Back</button>
-              <button disabled={!priceDollars} onClick={() => setStep(5)} className="px-6 py-2 bg-blue-600 text-white rounded-lg disabled:opacity-50">Next →</button>
+              <button onClick={() => setStep(4)} className="px-6 py-2 border border-gray-200 rounded-lg">← Back</button>
+              <button disabled={!priceDollars} onClick={() => setStep(6)} className="px-6 py-2 bg-blue-600 text-white rounded-lg disabled:opacity-50">Next →</button>
             </div>
           </div>
         )}
 
-        {/* STEP 5 — Preview */}
-        {step === 5 && selected && (
+        {/* STEP 6 — Preview */}
+        {step === 6 && selected && (
           <div>
             <h1 className="text-2xl font-bold mb-2 text-gray-900">Preview & publish</h1>
             <p className="text-gray-500 mb-6">Review before going live.</p>
@@ -772,9 +871,15 @@ export default function NewListingPage() {
               {niche && <div className="flex justify-between"><span className="text-gray-500">Niche</span><span className="text-gray-900">{niche}</span></div>}
               {priceDollars && <div className="flex justify-between"><span className="text-gray-500">Price</span><span className="text-gray-900">${priceDollars}</span></div>}
               {acceptsCrypto && <div className="flex justify-between"><span className="text-gray-500">Crypto</span><span className="text-gray-900">Accepted</span></div>}
+              {(() => {
+                const total = Object.values(proofs).reduce((a, b) => a + b.length, 0)
+                return total > 0 ? (
+                  <div className="flex justify-between"><span className="text-gray-500">Proof screenshots</span><span className="text-gray-900">{total}</span></div>
+                ) : null
+              })()}
             </div>
             <div className="flex justify-between mt-6">
-              <button onClick={() => setStep(4)} className="px-6 py-2 border border-gray-200 rounded-lg">← Back</button>
+              <button onClick={() => setStep(5)} className="px-6 py-2 border border-gray-200 rounded-lg">← Back</button>
               <button onClick={submit} disabled={loading} className="px-6 py-2 bg-blue-600 text-white rounded-lg disabled:opacity-50">
                 {loading ? 'Publishing…' : 'Publish listing'}
               </button>
