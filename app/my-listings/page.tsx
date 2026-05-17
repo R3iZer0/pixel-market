@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import type { Listing } from '@/types/database'
+import { ListingActions } from './actions-client'
 
 export default async function MyListingsPage() {
   const supabase = await createClient()
@@ -65,7 +66,10 @@ export default async function MyListingsPage() {
                       {l.created_at ? new Date(l.created_at).toLocaleDateString() : '—'}
                     </td>
                     <td className="p-3 text-right">
-                      <Link href={`/listings/${l.id}`} className="text-xs text-blue-600 hover:underline">View</Link>
+                      <div className="flex gap-3 justify-end items-center">
+                        <Link href={`/listings/${l.id}`} className="text-xs text-blue-600 hover:underline">View</Link>
+                        <ListingActions id={l.id} status={l.status} />
+                      </div>
                     </td>
                   </tr>
                 ))}

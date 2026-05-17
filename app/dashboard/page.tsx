@@ -374,13 +374,12 @@ export default async function DashboardPage() {
         )}
 
         {/* Quick links */}
-        <div className="flex gap-3">
-          <Link href="/listings/new" className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
-            + List an asset
-          </Link>
-          <Link href="/browse" className="px-4 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">
-            Browse marketplace
-          </Link>
+        <div className="flex flex-wrap gap-3">
+          <Link href="/listings/new" className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">+ List an asset</Link>
+          <Link href="/browse" className="px-4 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">Browse marketplace</Link>
+          <Link href="/my-listings" className="px-4 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">My listings</Link>
+          <Link href="/orders" className="px-4 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">My orders</Link>
+          <Link href="/sales" className="px-4 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">My sales</Link>
         </div>
       </div>
     </div>
