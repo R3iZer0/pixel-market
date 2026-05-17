@@ -10,6 +10,10 @@
 - [x] GitHub repo
 - [x] Vercel production deployment
 
+**Extras:**
+- [x] Force dark mode globally (legibility)
+- [x] `/api/me` endpoint (current user id/email)
+
 ---
 
 ## Phase 2 — Auth ✅
@@ -17,89 +21,110 @@
 - [x] `/signup` page (email + Google button)
 - [x] `/auth/callback` — Supabase OAuth redirect handler
 - [x] `/api/auth/meta-connect` — direct FB OAuth (bypasses Supabase email scope conflict)
-- [x] `/api/meta/callback` — FB OAuth callback, exchanges code → short token → long-lived token, stores in profiles
+- [x] `/api/meta/callback` — exchanges code → short token → long-lived token, stores in profiles
 - [x] `/api/auth/signout`
 - [x] Profile auto-created on signup (trigger fixed: collision-safe, RLS-safe, error-tolerant)
-- [x] Test: Meta login works, FB ad accounts pulled live
 - [x] Dashboard shows ALL pixels + custom audiences + lookalikes + engagement audiences from Meta
-- [ ] Google OAuth button tested (works, untested end-to-end)
+- [ ] Google OAuth tested end-to-end (button present)
 - [ ] Token refresh cron (60-day expiry — must build before launch)
 
 ---
 
 ## Phase 2.5 — Meta App Compliance (Legal) ✅
-- [x] `/legal/privacy` — Privacy Policy (Meta-compliant, GDPR/CCPA)
+- [x] `/legal/privacy` — Privacy Policy
 - [x] `/legal/terms` — Terms of Service
 - [x] `/legal/data-deletion` — User-facing deletion instructions
-- [x] `/api/data-deletion` — Meta signed_request callback endpoint (HMAC-verified)
+- [x] `/api/data-deletion` — Meta signed_request callback (HMAC-verified)
 - [x] Footer links on landing page
-- [ ] Paste URLs into Meta App Dashboard → Basic Settings (manual step)
+
+**Pending manual:**
+- [ ] Paste URLs into Meta App Dashboard → Basic Settings
 
 ---
 
-## Phase 3 — Browse & Listings (PUBLIC)
-- [ ] `/browse` — listings grid with filters
-  - [ ] Filter: asset type, source type, event, retention range, category, geo, price range, audience size
-  - [ ] Search bar
-  - [ ] Sort: newest, price asc/desc, audience size
-- [ ] `/listings/[id]` — listing detail page
-  - [ ] Asset details, seller card, price, CTA (Buy / Make Trade Offer)
-  - [ ] Seller rating + total sales
+## Phase 3 — Browse & Listings (PUBLIC) ✅
+- [x] `/browse` — listings grid with filters
+  - [x] Filter: asset type, category, geo
+  - [x] Search bar (title)
+  - [x] Sort: newest, price asc/desc, audience size
+- [x] `/listings/[id]` — listing detail page
+  - [x] Asset details, seller card, price, Buy CTA
+  - [x] Anonymous seller display (username only, no real PII)
+  - [x] Proof screenshots rendered via signed URLs
+  - [x] Seller rating + total sales
+- [x] **Public views** for anonymity (`public_listings`, `public_profiles`) — Meta IDs stripped
 
 ---
 
-## Phase 4 — Listing Wizard (SELLER) ← **NEXT UP**
-- [ ] `/listings/new` — 5-step wizard
-  - [ ] Step 1: Pick asset from live Meta dropdown (pull from Meta API)
-  - [ ] Step 2: Source details (dynamic fields per source type — 11 types)
-  - [ ] Step 3: Categorize (primary + 2 secondary, geo, niche tags)
-  - [ ] Step 4: Pricing (sale / trade / both, price, crypto toggle)
-  - [ ] Step 5: Preview & publish
-- [ ] `/my-listings` — seller manages own listings (edit, pause, delete)
+## Phase 4 — Listing Wizard (SELLER) ✅
+- [x] `/listings/new` — 6-step wizard
+  - [x] Step 1: Pick asset from live Meta dropdown
+  - [x] Step 2: Smart per-asset details
+    - [x] Pixel: events firing (+ counts from `/stats`), websites firing, age
+    - [x] Lookalike: country, similarity %, source audience deep chain
+    - [x] Custom/Engagement: source pixel/page/video, rule
+    - [x] Tag input for websites (Enter to add)
+    - [x] Manual event entry fallback
+    - [x] Data source explanation (required for lookalike/customer-list/website)
+  - [x] Step 3: Categorize (primary + 2 secondary, geo, niche)
+  - [x] **Step 4: Proof screenshots** — per-asset slots, multi-file upload
+  - [x] Step 5: Pricing (sale only, USD, crypto toggle)
+  - [x] Step 6: Preview & publish
+- [x] `/my-listings` — pause / resume / delete actions
+- [x] Supabase Storage bucket (`listing-proofs`, private) + signed URL endpoint
 
 ---
 
-## Phase 5 — Meta API Deep Integration
-- [ ] `POST /api/meta/transfer` — share asset to buyer's ad account (called after payment)
-- [ ] Lookalike workaround — share source audience + auto-recreate lookalike on buyer's account
-- [ ] Token refresh cron (Vercel cron, daily) — refresh tokens expiring within 7 days
+## Phase 5 — Meta API Deep Integration (partial)
+- [x] `POST /api/meta/transfer` — share asset to buyer's ad account
+  - [x] Custom audience: `POST /{audience_id}/adaccounts` with `adaccounts: [numeric_id]`
+  - [x] Engagement audience: same as custom
+  - [x] Lookalike: same as custom (lookalikes ARE custom audiences)
+  - [x] Pixel: `POST /{pixel_id}/shared_accounts` (requires BM on both sides) — code done, untested
+- [x] `/dev/test-transfer` — manual trigger UI for testing
+- [x] `/api/meta/assets` — list pixels + audiences per ad account
+- [x] `/api/meta/asset-details` — deep enrichment per asset (pixel /stats, audience lookalike_spec recursion)
+- [ ] Token refresh cron (Vercel cron, daily)
 - [ ] Auto-pause listings on token failure + notify user
+- [ ] Seller pre-flight: warn if pixel not BM-attached
 
 ---
 
-## Phase 6 — Checkout & Payments
-- [ ] `POST /api/orders` — create order + checkout session
+## Phase 6 — Checkout & Payments (NEXT)
+- [x] `POST /api/orders` — create pending_payment order (with buyer ad acct + payment method)
+- [x] `/listings/[id]/buy` — buyer ad-account picker + BM picker for pixels, enforces Meta connected
+- [x] **DEV** `POST /api/orders/[id]/test-pay` — simulate payment success + trigger transfer
 - [ ] Stripe Connect
   - [ ] Seller onboarding flow (`/settings` → Connect Stripe)
   - [ ] Stripe Checkout session (card payment)
-  - [ ] `POST /api/webhooks/stripe` — handle `payment_intent.succeeded`, transfers, disputes
+  - [ ] `POST /api/webhooks/stripe`
 - [ ] Coinbase Commerce crypto
-  - [ ] Checkout modal: Card tab / Crypto tab (QR + 15min countdown)
-  - [ ] `POST /api/webhooks/coinbase` — handle `charge:confirmed`, `charge:failed`
-- [ ] Order state machine: `pending_payment → paid → transferring → transferred → completed`
+  - [ ] Checkout: QR + 15min countdown
+  - [ ] `POST /api/webhooks/coinbase`
+- [x] Order state machine: `pending_payment → paid → transferring → transferred → completed`
 - [ ] Auto-cancel after 30min if no payment
 
 ---
 
-## Phase 7 — Orders & Transfer Flow
-- [ ] `/orders` — buyer order history
-- [ ] `/sales` — seller incoming orders
-- [ ] `/orders/[id]` — order detail
-  - [ ] Status stepper
-  - [ ] Meta transfer status badge
-  - [ ] "Confirm receipt" button (buyer)
-  - [ ] "Open dispute" button (buyer, within 7 days of transfer)
-- [ ] `POST /api/orders/[id]/confirm` — buyer confirms receipt → triggers payout
+## Phase 7 — Orders & Transfer Flow ✅ (mostly)
+- [x] `/orders` — buyer order history
+- [x] `/sales` — seller incoming orders
+- [x] `/orders/[id]` — order detail
+  - [x] Status stepper
+  - [x] Meta transfer status badge + error display
+  - [x] "Confirm receipt" button (buyer)
+  - [x] "Test pay" button (dev — simulates payment + transfer)
+  - [x] Meta asset ID revealed only after transfer
+- [x] `POST /api/orders/[id]/confirm` — buyer confirms → marks completed, listing sold, total_sales++
 - [ ] Auto-release payout after 7 days if no dispute
 - [ ] `POST /api/orders/[id]/dispute` — open dispute
+- [ ] "Open dispute" button (buyer, within 7 days of transfer)
 
 ---
 
-## Phase 8 — Trade Offers
-- [ ] Trade offer flow on `/listings/[id]`
-- [ ] Seller accepts/rejects trade offer
-- [ ] Trade with cash top-up support
-- [ ] Fee: 10% of lower asset's estimated value
+## Phase 8 — Trade Offers (DEPRIORITIZED)
+> User decision: sale-only platform for v1. Trade flow removed from wizard.
+- [ ] (skipped for v1)
 
 ---
 
@@ -112,7 +137,8 @@
 ## Phase 10 — Settings & Profile
 - [ ] `/settings` — profile edit, Meta connect/disconnect, Stripe Connect, crypto wallet
 - [ ] `/profile/[username]` — public seller profile (listings, rating, reviews)
-- [ ] Meta token expiry banner (shown when token expires < 7 days)
+- [x] Meta token expiry banner on dashboard (basic)
+- [ ] **Reminder: add `public_profile,email` Meta scope flow** to pull FB name+email for verification (split from marketing scope flow)
 
 ---
 
@@ -143,3 +169,17 @@
 - [ ] Step-by-step reproduction guide
 - [ ] Submit App Review (5–10 business days)
 - [ ] Switch Meta app from Dev mode → Live
+
+---
+
+## Extras built (not in original phases)
+- [x] `/dev/test-transfer` — manual transfer trigger UI for debugging
+- [x] `/api/listings/mine` — current user's listings (used by test-transfer)
+- [x] `/api/listings/public-info` — minimal public listing data (used by /buy page)
+- [x] `/api/listings/[id]` PATCH (pause/unpause) + DELETE (soft delete → expired)
+- [x] `/api/me` — current user id + email
+- [x] `/api/proof/sign` — generate signed URLs for private storage paths
+- [x] Storage bucket `listing-proofs` + RLS-aware signed URL access
+- [x] Force dark mode CSS overrides
+- [x] DB trigger fix (`handle_new_user`) — collision-safe usernames, error-tolerant
+- [x] Generated DB types from live schema (instead of hand-written)
