@@ -1,26 +1,63 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+html, body {
+  background: #0a0a0a;
+  color: #ededed;
+  color-scheme: dark;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* Force every page into dark palette — quickest path to legibility.
+   Override Tailwind's default light backgrounds/text everywhere. */
+
+/* Backgrounds */
+.bg-white { background-color: #111111 !important; }
+.bg-gray-50 { background-color: #0a0a0a !important; }
+.bg-gray-100 { background-color: #1f1f1f !important; }
+.bg-blue-50 { background-color: rgba(37, 99, 235, 0.15) !important; }
+.bg-red-50 { background-color: rgba(220, 38, 38, 0.15) !important; }
+.bg-yellow-50 { background-color: rgba(234, 179, 8, 0.15) !important; }
+.bg-green-50 { background-color: rgba(34, 197, 94, 0.15) !important; }
+.bg-purple-50 { background-color: rgba(168, 85, 247, 0.15) !important; }
+.bg-green-100 { background-color: rgba(34, 197, 94, 0.2) !important; }
+.bg-blue-100 { background-color: rgba(37, 99, 235, 0.2) !important; }
+
+/* Borders */
+.border-gray-100,
+.border-gray-200 { border-color: #2a2a2a !important; }
+.border-gray-50 { border-color: #1f1f1f !important; }
+.border-blue-100,
+.border-blue-200 { border-color: rgba(37, 99, 235, 0.4) !important; }
+.border-red-100 { border-color: rgba(220, 38, 38, 0.4) !important; }
+
+/* Text */
+.text-gray-900 { color: #fafafa !important; }
+.text-gray-700 { color: #d4d4d8 !important; }
+.text-gray-600 { color: #a1a1aa !important; }
+.text-gray-500 { color: #71717a !important; }
+.text-gray-400 { color: #52525b !important; }
+.text-blue-700 { color: #93c5fd !important; }
+.text-green-700 { color: #86efac !important; }
+.text-yellow-700 { color: #fde047 !important; }
+.text-red-700 { color: #fca5a5 !important; }
+.text-red-600 { color: #f87171 !important; }
+.text-red-500 { color: #ef4444 !important; }
+
+/* Hover */
+.hover\:bg-gray-50:hover { background-color: #1f1f1f !important; }
+.hover\:bg-gray-100:hover { background-color: #2a2a2a !important; }
+.hover\:text-gray-900:hover { color: #fafafa !important; }
+
+/* Inputs */
+input, textarea, select {
+  background-color: #1a1a1a !important;
+  color: #fafafa !important;
+  border-color: #2a2a2a !important;
+}
+input::placeholder, textarea::placeholder { color: #52525b !important; }
+input:focus, textarea:focus, select:focus {
+  border-color: #2563eb !important;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-}
+/* Table rows */
+table thead { background-color: #1a1a1a !important; }
+table tbody tr:hover { background-color: #1a1a1a !important; }
