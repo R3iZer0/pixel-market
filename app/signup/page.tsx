@@ -36,10 +36,7 @@ export default function SignupPage() {
     const supabase = await getClient()
     await supabase.auth.signInWithOAuth({
       provider: 'facebook',
-      options: {
-        redirectTo: `${location.origin}/auth/callback`,
-        scopes: 'ads_read,business_management,ads_management',
-      },
+      options: { redirectTo: `${location.origin}/auth/callback` },
     })
   }
 
