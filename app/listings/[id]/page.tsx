@@ -257,7 +257,7 @@ export default async function ListingDetailPage({
           {/* Seller */}
           <div className="bg-white border border-gray-200 rounded-lg p-5">
             <p className="text-xs text-gray-500 mb-2">Seller</p>
-            <div className="flex items-center gap-3">
+            <Link href={`/profile/${listing.seller_username || ''}`} className="flex items-center gap-3 hover:opacity-80">
               <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 font-bold">
                 {(listing.seller_username || 'A').charAt(0).toUpperCase()}
               </div>
@@ -268,7 +268,7 @@ export default async function ListingDetailPage({
                   {listing.seller_rating != null && <> · ★ {listing.seller_rating.toFixed(1)}</>}
                 </p>
               </div>
-            </div>
+            </Link>
             {listing.seller_verified && <p className="text-xs text-green-600 mt-2">✓ Verified seller</p>}
           </div>
 
