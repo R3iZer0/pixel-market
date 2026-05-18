@@ -128,9 +128,24 @@
 
 ---
 
-## Phase 9 — Messaging
-- [ ] `/messages/[threadId]` — order-based chat (Supabase Realtime)
-- [ ] Unread count badge in nav
+## Phase 9 — Messaging ✅
+- [x] `/messages` — thread list with last-message preview, unread badges, polling every 8s
+- [x] `/messages/[threadId]` — chat view (`order-{uuid}` OR `listing-{listing_uuid}-{buyer_uuid}` route patterns)
+  - [x] Auto-marks peer messages read on open
+  - [x] Enter to send, Shift+Enter newline
+  - [x] Polls for new messages every 8s
+- [x] `/api/messages` GET (threads list, grouped) + POST (send)
+- [x] `/api/messages/thread` GET — messages + offers + peer + listing meta
+- [x] Schema extended: `messages.listing_id` nullable column, `messages.order_id` nullable, new RLS allowing thread parties
+- [x] **Price offers** — separate `price_offers` table
+  - [x] `/api/offers` POST — create offer (auto-withdraws prior pending from same buyer)
+  - [x] `/api/offers/[id]/accept` — seller accepts → message posted, buyer can checkout at offer price
+  - [x] `/api/offers/[id]/reject` — seller rejects
+  - [x] `/api/offers/[id]/withdraw` — buyer withdraws
+  - [x] Offer cards rendered inline in chat timeline (mixed with messages, color-coded by status)
+  - [x] Checkout uses offer price when `offer_id` in /buy querystring + `/api/orders` body
+- [ ] Realtime (Supabase Realtime instead of 8s polling)
+- [ ] Unread count badge in main nav
 
 ---
 
@@ -191,6 +206,9 @@
 - [x] `/api/account/password` — change password with current-password verify
 - [x] `/api/account/delete` — wipe user via admin API
 - [x] `/api/auth/meta-disconnect` — null Meta token + pause active listings
+- [x] Public views fixed with `security_invoker = off` so cross-user reads work despite tight profile RLS
+- [x] `/api/messages` + `/api/messages/thread` + `/api/offers/*` — full messaging + offers backend
+- [x] Schema: `messages.listing_id` + nullable `order_id` + `price_offers` table
 - [x] Storage bucket `listing-proofs` + RLS-aware signed URL access
 - [x] Force dark mode CSS overrides
 - [x] DB trigger fix (`handle_new_user`) — collision-safe usernames, error-tolerant
