@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
+type Me = { id: string; email: string }
 type Profile = {
   id: string
   username: string
@@ -24,12 +25,21 @@ const CHAINS = ['ETH', 'SOL', 'BTC', 'LTC', 'TRON', 'MATIC', 'BSC']
 
 export default function SettingsPage() {
   const router = useRouter()
+  const [me, setMe] = useState<Me | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
   const [savingProfile, setSavingProfile] = useState(false)
   const [savingPayout, setSavingPayout] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+
+  // Account credential fields
+  const [newEmail, setNewEmail] = useState('')
+  const [currentPw, setCurrentPw] = useState('')
+  const [newPw, setNewPw] = useState('')
+  const [savingEmail, setSavingEmail] = useState(false)
+  const [savingPw, setSavingPw] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   // Editable fields
   const [username, setUsername] = useState('')
@@ -40,21 +50,22 @@ export default function SettingsPage() {
   const [preferredChain, setPreferredChain] = useState('')
 
   useEffect(() => {
-    fetch('/api/profile')
-      .then(r => r.json())
-      .then(d => {
-        if (d.profile) {
-          setProfile(d.profile)
-          setUsername(d.profile.username || '')
-          setDisplayName(d.profile.display_name || '')
-          setBio(d.profile.bio || '')
-          setAvatarUrl(d.profile.avatar_url || '')
-          setCryptoWallet(d.profile.crypto_wallet || '')
-          setPreferredChain(d.profile.preferred_chain || '')
-        }
-        setLoading(false)
-      })
-      .catch(() => setLoading(false))
+    Promise.all([
+      fetch('/api/me').then(r => r.json()),
+      fetch('/api/profile').then(r => r.json()),
+    ]).then(([meData, profData]) => {
+      if (meData.id) setMe(meData)
+      if (profData.profile) {
+        setProfile(profData.profile)
+        setUsername(profData.profile.username || '')
+        setDisplayName(profData.profile.display_name || '')
+        setBio(profData.profile.bio || '')
+        setAvatarUrl(profData.profile.avatar_url || '')
+        setCryptoWallet(profData.profile.crypto_wallet || '')
+        setPreferredChain(profData.profile.preferred_chain || '')
+      }
+      setLoading(false)
+    }).catch(() => setLoading(false))
   }, [])
 
   async function saveProfile() {
@@ -91,6 +102,47 @@ export default function SettingsPage() {
     setSavingPayout(false)
     if (d.error) setMsg({ type: 'err', text: d.error })
     else setMsg({ type: 'ok', text: 'Payout settings saved' })
+  }
+
+  async function changeEmail() {
+    if (!newEmail.trim()) return
+    setSavingEmail(true)
+    setMsg(null)
+    const res = await fetch('/api/account/email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: newEmail.trim() }),
+    })
+    const d = await res.json()
+    setSavingEmail(false)
+    if (d.error) setMsg({ type: 'err', text: d.error })
+    else { setMsg({ type: 'ok', text: d.message || 'Confirmation sent.' }); setNewEmail('') }
+  }
+
+  async function changePassword() {
+    if (!currentPw || !newPw) return
+    setSavingPw(true)
+    setMsg(null)
+    const res = await fetch('/api/account/password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ current_password: currentPw, new_password: newPw }),
+    })
+    const d = await res.json()
+    setSavingPw(false)
+    if (d.error) setMsg({ type: 'err', text: d.error })
+    else { setMsg({ type: 'ok', text: 'Password updated.' }); setCurrentPw(''); setNewPw('') }
+  }
+
+  async function deleteAccount() {
+    const confirmed = prompt('Type DELETE to permanently delete your account. All listings expire, pending orders cancel, profile + Meta token wiped.')
+    if (confirmed !== 'DELETE') return
+    setDeleting(true)
+    const res = await fetch('/api/account/delete', { method: 'POST' })
+    const d = await res.json()
+    setDeleting(false)
+    if (d.error) { setMsg({ type: 'err', text: d.error }); return }
+    window.location.href = '/'
   }
 
   async function disconnectMeta() {
@@ -257,6 +309,64 @@ export default function SettingsPage() {
               <p className="text-xl font-bold text-gray-900">{profile.is_verified ? 'Yes' : 'No'}</p>
             </div>
           </div>
+        </section>
+
+        {/* Credentials */}
+        <section className="bg-white border border-gray-200 rounded-lg p-6">
+          <h2 className="font-semibold text-gray-900 mb-1">Login credentials</h2>
+          <p className="text-xs text-gray-500 mb-4">Only applies if you signed up with email/password.</p>
+
+          {/* Email */}
+          <div className="space-y-2 mb-6">
+            <p className="text-sm font-medium text-gray-700">Email</p>
+            <div className="p-3 bg-gray-50 rounded text-sm text-gray-600">Current: <span className="text-gray-900">{me?.email || '—'}</span></div>
+            <div className="flex gap-2">
+              <input
+                type="email"
+                value={newEmail}
+                onChange={e => setNewEmail(e.target.value)}
+                placeholder="new@email.com"
+                className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm"
+              />
+              <button onClick={changeEmail} disabled={savingEmail || !newEmail.trim()} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg disabled:opacity-50">
+                {savingEmail ? 'Sending…' : 'Change email'}
+              </button>
+            </div>
+            <p className="text-xs text-gray-400">Confirmation link sent to both old and new addresses. Both must confirm.</p>
+          </div>
+
+          {/* Password */}
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-gray-700">Password</p>
+            <input
+              type="password"
+              value={currentPw}
+              onChange={e => setCurrentPw(e.target.value)}
+              placeholder="Current password"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+              autoComplete="current-password"
+            />
+            <input
+              type="password"
+              value={newPw}
+              onChange={e => setNewPw(e.target.value)}
+              placeholder="New password (min 6 chars)"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+              autoComplete="new-password"
+            />
+            <button onClick={changePassword} disabled={savingPw || !currentPw || !newPw} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg disabled:opacity-50">
+              {savingPw ? 'Updating…' : 'Change password'}
+            </button>
+          </div>
+        </section>
+
+        {/* Danger zone */}
+        <section className="bg-red-50 border border-red-200 rounded-lg p-6">
+          <h2 className="font-semibold text-red-700 mb-1">Danger zone</h2>
+          <p className="text-xs text-red-600 mb-4">Permanently deletes your account, profile, listings, and Meta token. Pending orders cancelled. Can&apos;t be undone.</p>
+          <button onClick={deleteAccount} disabled={deleting} className="px-4 py-2 bg-red-600 text-white text-sm rounded-lg disabled:opacity-50">
+            {deleting ? 'Deleting…' : 'Delete my account'}
+          </button>
         </section>
       </div>
     </div>
