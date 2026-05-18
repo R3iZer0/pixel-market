@@ -57,20 +57,25 @@ export default async function ListingDetailPage({
 
   const { data: { user } } = await supabase.auth.getUser()
 
-  // Generate signed URLs for proofs (visible to anyone viewing an active listing)
+  // Generate signed URLs for proofs (parallel — was sequential)
   const proofs = extra.proofs || {}
   const admin = createAdminClient()
-  const signedProofs: Record<string, string[]> = {}
+  const allPaths: Array<{ slot: string; path: string }> = []
   for (const [slot, paths] of Object.entries(proofs)) {
-    const urls: string[] = []
-    for (const path of paths) {
-      const { data: signed } = await admin.storage
-        .from('listing-proofs')
-        .createSignedUrl(path, 3600)
-      if (signed?.signedUrl) urls.push(signed.signedUrl)
-    }
-    signedProofs[slot] = urls
+    for (const path of paths) allPaths.push({ slot, path })
   }
+  const signResults = await Promise.all(
+    allPaths.map(({ path }) =>
+      admin.storage.from('listing-proofs').createSignedUrl(path, 3600).then(r => r.data?.signedUrl || null)
+    )
+  )
+  const signedProofs: Record<string, string[]> = {}
+  allPaths.forEach(({ slot }, i) => {
+    if (signResults[i]) {
+      if (!signedProofs[slot]) signedProofs[slot] = []
+      signedProofs[slot].push(signResults[i]!)
+    }
+  })
 
   const slotLabel: Record<string, string> = {
     events_manager: 'Events Manager — events firing',

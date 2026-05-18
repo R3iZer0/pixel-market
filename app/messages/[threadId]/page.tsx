@@ -65,7 +65,9 @@ export default function ThreadPage() {
   useEffect(() => {
     fetch('/api/me').then(r => r.json()).then(d => setMe(d.id || null)).catch(() => {})
     load().finally(() => setLoading(false))
-    const interval = setInterval(load, 8000)
+    const interval = setInterval(() => {
+      if (!document.hidden) load()
+    }, 10000)
     return () => clearInterval(interval)
   }, [load])
 

@@ -17,11 +17,15 @@ export default function MessagesPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/messages')
+    const load = () => fetch('/api/messages')
       .then(r => r.json())
       .then(d => setThreads(d.threads || []))
       .catch(() => {})
-      .finally(() => setLoading(false))
+    load().finally(() => setLoading(false))
+    const interval = setInterval(() => {
+      if (!document.hidden) load()
+    }, 20000)
+    return () => clearInterval(interval)
   }, [])
 
   function threadHref(t: Thread) {

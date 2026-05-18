@@ -1,61 +1,78 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { CheckCircle, AlertCircle, User, LogOut, Target, Users, Sparkles } from 'lucide-react'
+import { CheckCircle, AlertCircle, User, LogOut } from 'lucide-react'
 import type { Profile } from '@/types/database'
+import { Suspense } from 'react'
 
 type AdAccount = { id: string; name: string; currency: string; account_status: number }
-type Pixel = { id: string; name: string; creation_time?: string; last_fired_time?: string }
-type Audience = {
-  id: string
-  name: string
-  subtype: string
-  approximate_count_lower_bound?: number
-  approximate_count_upper_bound?: number
-  retention_days?: number
-  description?: string
-  time_created?: number
-}
 
-async function fbGet<T>(path: string, token: string): Promise<T | { error: { message: string; code?: number } }> {
+async function fbGet<T>(path: string, token: string): Promise<T | null> {
   try {
     const sep = path.includes('?') ? '&' : '?'
     const res = await fetch(
       `https://graph.facebook.com/v19.0${path}${sep}access_token=${token}`,
-      { cache: 'no-store' }
+      { next: { revalidate: 60 } } // 60s cache — dashboard view doesn't need real-time
     )
     return await res.json()
-  } catch (e) {
-    return { error: { message: (e as Error).message } }
-  }
+  } catch { return null }
 }
 
-async function getMetaUserInfo(token: string) {
-  return fbGet<{ id: string; name: string; email?: string }>('/me?fields=id,name,email,picture', token)
-}
+async function MetaPanel({ token }: { token: string }) {
+  const [meRes, accsRes] = await Promise.all([
+    fbGet<{ id: string; name: string }>('/me?fields=id,name', token),
+    fbGet<{ data: AdAccount[] }>('/me/adaccounts?fields=id,name,account_status,currency&limit=50', token),
+  ])
 
-async function getAdAccounts(token: string) {
-  return fbGet<{ data: AdAccount[] }>('/me/adaccounts?fields=id,name,account_status,currency', token)
-}
+  const meErr = (meRes as { error?: { message: string; code?: number } } | null)?.error
+  const accs = (accsRes && 'data' in (accsRes as object) ? (accsRes as { data: AdAccount[] }).data : []) || []
 
-async function getPixelsForAccount(accountId: string, token: string) {
-  return fbGet<{ data: Pixel[] }>(
-    `/${accountId}/adspixels?fields=id,name,creation_time,last_fired_time`,
-    token
+  return (
+    <>
+      {meErr ? (
+        <div className="bg-red-50 rounded-xl border border-red-100 p-4 mb-6 text-sm text-red-700">
+          <strong>Meta API error:</strong> {meErr.message}
+          <br /><span className="text-xs text-red-500">Code: {meErr.code} — Token may need reconnect</span>
+        </div>
+      ) : meRes && (
+        <div className="bg-white rounded-xl border border-gray-100 p-6 mb-6">
+          <h2 className="font-semibold text-gray-900 mb-4">Meta account</h2>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="p-3 bg-gray-50 rounded">
+              <p className="text-gray-500 text-xs">FB Name</p>
+              <p className="text-gray-900">{meRes.name}</p>
+            </div>
+            <div className="p-3 bg-gray-50 rounded">
+              <p className="text-gray-500 text-xs">FB ID</p>
+              <p className="text-gray-900 font-mono text-xs">{meRes.id}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {accs.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-100 p-6 mb-6">
+          <h2 className="font-semibold text-gray-900 mb-4">Ad accounts ({accs.length})</h2>
+          <div className="space-y-1">
+            {accs.map(acc => (
+              <div key={acc.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0 text-sm">
+                <div>
+                  <p className="font-medium text-gray-900">{acc.name}</p>
+                  <p className="text-xs text-gray-400 font-mono">{acc.id}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500">{acc.currency}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${acc.account_status === 1 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                    {acc.account_status === 1 ? 'Active' : 'Inactive'}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
   )
-}
-
-async function getAudiencesForAccount(accountId: string, token: string) {
-  return fbGet<{ data: Audience[] }>(
-    `/${accountId}/customaudiences?fields=id,name,subtype,approximate_count_lower_bound,approximate_count_upper_bound,retention_days,description,time_created&limit=200`,
-    token
-  )
-}
-
-function formatCount(lo?: number, hi?: number) {
-  if (lo == null && hi == null) return '—'
-  if (lo === hi) return lo!.toLocaleString()
-  return `${(lo ?? 0).toLocaleString()}–${(hi ?? 0).toLocaleString()}`
 }
 
 export default async function DashboardPage() {
@@ -69,48 +86,6 @@ export default async function DashboardPage() {
     .eq('id', user.id)
     .single()
   const profile = profileData as Profile | null
-
-  let metaUser: any = null
-  let adAccountsRes: any = null
-  const allPixels: Array<{ accountName: string; accountId: string; pixel: Pixel }> = []
-  const allCustomAudiences: Array<{ accountName: string; accountId: string; audience: Audience }> = []
-  const allLookalikes: Array<{ accountName: string; accountId: string; audience: Audience }> = []
-  const allEngagement: Array<{ accountName: string; accountId: string; audience: Audience }> = []
-
-  if (profile?.meta_access_token) {
-    metaUser = await getMetaUserInfo(profile.meta_access_token)
-    adAccountsRes = await getAdAccounts(profile.meta_access_token)
-
-    if (adAccountsRes?.data?.length) {
-      // fetch pixels + audiences for each ad account in parallel
-      const results = await Promise.all(
-        adAccountsRes.data.map(async (acc: AdAccount) => {
-          const [pixelsRes, audiencesRes] = await Promise.all([
-            getPixelsForAccount(acc.id, profile.meta_access_token!),
-            getAudiencesForAccount(acc.id, profile.meta_access_token!),
-          ])
-          return { acc, pixelsRes, audiencesRes }
-        })
-      )
-
-      for (const { acc, pixelsRes, audiencesRes } of results) {
-        if (pixelsRes && 'data' in pixelsRes && Array.isArray(pixelsRes.data)) {
-          for (const px of pixelsRes.data) {
-            allPixels.push({ accountName: acc.name, accountId: acc.id, pixel: px })
-          }
-        }
-        if (audiencesRes && 'data' in audiencesRes && Array.isArray(audiencesRes.data)) {
-          for (const aud of audiencesRes.data) {
-            const bucket =
-              aud.subtype === 'LOOKALIKE' ? allLookalikes
-              : aud.subtype === 'ENGAGEMENT' ? allEngagement
-              : allCustomAudiences
-            bucket.push({ accountName: acc.name, accountId: acc.id, audience: aud })
-          }
-        }
-      }
-    }
-  }
 
   const tokenExpiresSoon = profile?.meta_token_expires
     ? new Date(profile.meta_token_expires) < new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
@@ -130,7 +105,7 @@ export default async function DashboardPage() {
         </div>
       </nav>
 
-      <div className="max-w-6xl mx-auto px-6 py-10">
+      <div className="max-w-5xl mx-auto px-6 py-10">
         <h1 className="text-2xl font-bold text-gray-900 mb-8">Dashboard</h1>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -146,7 +121,7 @@ export default async function DashboardPage() {
             <div className="space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-gray-500">Email</span><span className="text-gray-900">{user.email}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Username</span><span className="text-gray-900">{profile?.username || '—'}</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Provider</span><span className="text-gray-900 capitalize">{user.app_metadata?.provider || 'email'}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Sales</span><span className="text-gray-900">{profile?.total_sales || 0}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Verified</span><span className={profile?.is_verified ? 'text-green-600' : 'text-gray-400'}>{profile?.is_verified ? 'Yes' : 'No'}</span></div>
             </div>
           </div>
@@ -172,216 +147,41 @@ export default async function DashboardPage() {
               </div>
             )}
 
-            {metaUser && !metaUser.error ? (
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between"><span className="text-gray-500">FB Name</span><span className="text-gray-900">{metaUser.name}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">FB ID</span><span className="text-gray-900 font-mono text-xs">{metaUser.id}</span></div>
-                {profile?.meta_token_expires && (
-                  <div className="flex justify-between"><span className="text-gray-500">Token expires</span><span className="text-gray-900">{new Date(profile.meta_token_expires).toLocaleDateString()}</span></div>
-                )}
-                <div className="pt-2">
-                  <a href="/api/auth/meta-connect" className="text-xs text-blue-600 hover:underline">Reconnect</a>
-                </div>
+            {profile?.meta_token_expires && (
+              <div className="text-sm">
+                <p className="text-gray-500 text-xs">Token expires</p>
+                <p className="text-gray-900">{new Date(profile.meta_token_expires).toLocaleDateString()}</p>
               </div>
-            ) : (
-              <p className="text-sm text-gray-500 mb-4">Connect your Meta account to list or receive assets.</p>
             )}
 
-            {!profile?.meta_access_token && (
-              <a href="/api/auth/meta-connect" className="mt-4 flex items-center justify-center gap-2 w-full py-2 px-4 bg-[#1877F2] text-white text-sm font-medium rounded-lg hover:bg-[#166FE5] transition-colors">
-                Connect Meta Account
-              </a>
-            )}
+            <div className="mt-4 flex gap-2">
+              {profile?.meta_access_token ? (
+                <Link href="/settings" className="text-xs text-blue-600 hover:underline">Manage in settings</Link>
+              ) : (
+                <a href="/api/auth/meta-connect" className="flex items-center justify-center gap-2 w-full py-2 px-4 bg-[#1877F2] text-white text-sm font-medium rounded-lg">
+                  Connect Meta Account
+                </a>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Ad accounts */}
-        {adAccountsRes?.data?.length > 0 && (
-          <div className="bg-white rounded-xl border border-gray-100 p-6 mb-6">
-            <h2 className="font-semibold text-gray-900 mb-4">Meta Ad Accounts ({adAccountsRes.data.length})</h2>
-            <div className="space-y-2">
-              {adAccountsRes.data.map((acc: AdAccount) => (
-                <div key={acc.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">{acc.name}</p>
-                    <p className="text-xs text-gray-400 font-mono">{acc.id}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-500">{acc.currency}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${acc.account_status === 1 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                      {acc.account_status === 1 ? 'Active' : 'Inactive'}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {adAccountsRes?.error && (
-          <div className="bg-red-50 rounded-xl border border-red-100 p-4 mb-6 text-sm text-red-700">
-            <strong>Meta API error:</strong> {adAccountsRes.error.message}<br />
-            <span className="text-xs text-red-500">Code: {adAccountsRes.error.code} — Token may need reconnect</span>
-          </div>
-        )}
-
-        {/* Pixels */}
+        {/* Meta panel — async, doesn't block render */}
         {profile?.meta_access_token && (
-          <div className="bg-white rounded-xl border border-gray-100 p-6 mb-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Target className="w-4 h-4 text-blue-600" />
-              <h2 className="font-semibold text-gray-900">Pixels ({allPixels.length})</h2>
-            </div>
-            {allPixels.length === 0 ? (
-              <p className="text-sm text-gray-400">No pixels found across your ad accounts.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="text-xs text-gray-500 uppercase">
-                    <tr className="border-b border-gray-100">
-                      <th className="text-left py-2 font-medium">Name</th>
-                      <th className="text-left py-2 font-medium">Pixel ID</th>
-                      <th className="text-left py-2 font-medium">Ad Account</th>
-                      <th className="text-left py-2 font-medium">Created</th>
-                      <th className="text-left py-2 font-medium">Last Fired</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {allPixels.map(({ accountName, accountId, pixel }) => (
-                      <tr key={`${accountId}-${pixel.id}`} className="border-b border-gray-50 last:border-0">
-                        <td className="py-2 font-medium text-gray-900">{pixel.name}</td>
-                        <td className="py-2 font-mono text-xs text-gray-600">{pixel.id}</td>
-                        <td className="py-2 text-gray-600">{accountName}</td>
-                        <td className="py-2 text-gray-500 text-xs">{pixel.creation_time ? new Date(pixel.creation_time).toLocaleDateString() : '—'}</td>
-                        <td className="py-2 text-gray-500 text-xs">{pixel.last_fired_time ? new Date(pixel.last_fired_time).toLocaleDateString() : '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Custom Audiences */}
-        {profile?.meta_access_token && (
-          <div className="bg-white rounded-xl border border-gray-100 p-6 mb-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Users className="w-4 h-4 text-blue-600" />
-              <h2 className="font-semibold text-gray-900">Custom Audiences ({allCustomAudiences.length})</h2>
-            </div>
-            {allCustomAudiences.length === 0 ? (
-              <p className="text-sm text-gray-400">No custom audiences found.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="text-xs text-gray-500 uppercase">
-                    <tr className="border-b border-gray-100">
-                      <th className="text-left py-2 font-medium">Name</th>
-                      <th className="text-left py-2 font-medium">Subtype</th>
-                      <th className="text-left py-2 font-medium">Size</th>
-                      <th className="text-left py-2 font-medium">Retention</th>
-                      <th className="text-left py-2 font-medium">Ad Account</th>
-                      <th className="text-left py-2 font-medium">ID</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {allCustomAudiences.map(({ accountName, accountId, audience }) => (
-                      <tr key={`${accountId}-${audience.id}`} className="border-b border-gray-50 last:border-0">
-                        <td className="py-2 font-medium text-gray-900">{audience.name}</td>
-                        <td className="py-2 text-xs"><span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full">{audience.subtype}</span></td>
-                        <td className="py-2 text-gray-600">{formatCount(audience.approximate_count_lower_bound, audience.approximate_count_upper_bound)}</td>
-                        <td className="py-2 text-gray-600">{audience.retention_days ? `${audience.retention_days}d` : '—'}</td>
-                        <td className="py-2 text-gray-600">{accountName}</td>
-                        <td className="py-2 font-mono text-xs text-gray-400">{audience.id}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Lookalike Audiences */}
-        {profile?.meta_access_token && (
-          <div className="bg-white rounded-xl border border-gray-100 p-6 mb-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Sparkles className="w-4 h-4 text-purple-600" />
-              <h2 className="font-semibold text-gray-900">Lookalike Audiences ({allLookalikes.length})</h2>
-            </div>
-            {allLookalikes.length === 0 ? (
-              <p className="text-sm text-gray-400">No lookalike audiences found.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="text-xs text-gray-500 uppercase">
-                    <tr className="border-b border-gray-100">
-                      <th className="text-left py-2 font-medium">Name</th>
-                      <th className="text-left py-2 font-medium">Size</th>
-                      <th className="text-left py-2 font-medium">Retention</th>
-                      <th className="text-left py-2 font-medium">Ad Account</th>
-                      <th className="text-left py-2 font-medium">ID</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {allLookalikes.map(({ accountName, accountId, audience }) => (
-                      <tr key={`${accountId}-${audience.id}`} className="border-b border-gray-50 last:border-0">
-                        <td className="py-2 font-medium text-gray-900">{audience.name}</td>
-                        <td className="py-2 text-gray-600">{formatCount(audience.approximate_count_lower_bound, audience.approximate_count_upper_bound)}</td>
-                        <td className="py-2 text-gray-600">{audience.retention_days ? `${audience.retention_days}d` : '—'}</td>
-                        <td className="py-2 text-gray-600">{accountName}</td>
-                        <td className="py-2 font-mono text-xs text-gray-400">{audience.id}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Engagement Audiences */}
-        {profile?.meta_access_token && allEngagement.length > 0 && (
-          <div className="bg-white rounded-xl border border-gray-100 p-6 mb-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Users className="w-4 h-4 text-green-600" />
-              <h2 className="font-semibold text-gray-900">Engagement Audiences ({allEngagement.length})</h2>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-xs text-gray-500 uppercase">
-                  <tr className="border-b border-gray-100">
-                    <th className="text-left py-2 font-medium">Name</th>
-                    <th className="text-left py-2 font-medium">Size</th>
-                    <th className="text-left py-2 font-medium">Retention</th>
-                    <th className="text-left py-2 font-medium">Ad Account</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {allEngagement.map(({ accountName, accountId, audience }) => (
-                    <tr key={`${accountId}-${audience.id}`} className="border-b border-gray-50 last:border-0">
-                      <td className="py-2 font-medium text-gray-900">{audience.name}</td>
-                      <td className="py-2 text-gray-600">{formatCount(audience.approximate_count_lower_bound, audience.approximate_count_upper_bound)}</td>
-                      <td className="py-2 text-gray-600">{audience.retention_days ? `${audience.retention_days}d` : '—'}</td>
-                      <td className="py-2 text-gray-600">{accountName}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <Suspense fallback={<div className="bg-white rounded-xl border border-gray-100 p-6 mb-6 text-sm text-gray-400">Loading Meta data…</div>}>
+            <MetaPanel token={profile.meta_access_token} />
+          </Suspense>
         )}
 
         {/* Quick links */}
         <div className="flex flex-wrap gap-3">
-          <Link href="/listings/new" className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">+ List an asset</Link>
-          <Link href="/browse" className="px-4 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">Browse marketplace</Link>
-          <Link href="/my-listings" className="px-4 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">My listings</Link>
-          <Link href="/orders" className="px-4 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">My orders</Link>
-          <Link href="/sales" className="px-4 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">My sales</Link>
-          <Link href="/messages" className="px-4 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">Messages</Link>
-          <Link href="/settings" className="px-4 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">Settings</Link>
+          <Link prefetch href="/listings/new" className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700">+ List an asset</Link>
+          <Link prefetch href="/browse" className="px-4 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50">Browse marketplace</Link>
+          <Link prefetch href="/my-listings" className="px-4 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50">My listings</Link>
+          <Link prefetch href="/orders" className="px-4 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50">My orders</Link>
+          <Link prefetch href="/sales" className="px-4 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50">My sales</Link>
+          <Link prefetch href="/messages" className="px-4 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50">Messages</Link>
+          <Link prefetch href="/settings" className="px-4 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50">Settings</Link>
         </div>
       </div>
     </div>

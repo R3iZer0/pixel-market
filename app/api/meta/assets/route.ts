@@ -45,7 +45,9 @@ type Audience = {
 
 async function fbGet<T>(path: string, token: string): Promise<T | { error: { message: string; code?: number } }> {
   const sep = path.includes('?') ? '&' : '?'
-  const res = await fetch(`https://graph.facebook.com/v19.0${path}${sep}access_token=${token}`, { cache: 'no-store' })
+  const res = await fetch(`https://graph.facebook.com/v19.0${path}${sep}access_token=${token}`, {
+    next: { revalidate: 60 },
+  })
   return await res.json()
 }
 
