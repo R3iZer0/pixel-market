@@ -134,10 +134,17 @@
 
 ---
 
-## Phase 10 — Settings & Profile
-- [ ] `/settings` — profile edit, Meta connect/disconnect, Stripe Connect, crypto wallet
-- [ ] `/profile/[username]` — public seller profile (listings, rating, reviews)
+## Phase 10 — Settings & Profile ✅
+- [x] `/settings` — profile edit, Meta connect/disconnect, crypto wallet
+  - [x] Public profile: username (validated 3–30 chars a–z 0–9 _), display name, avatar URL, bio
+  - [x] Meta connection: status, FB user ID, token expiry warn (<7d), Reconnect, **Disconnect** (pauses active listings)
+  - [x] Payout: Stripe Connect button (disabled placeholder), crypto wallet + chain
+  - [x] Account stats: total sales, rating, verified
+  - [x] **Login credentials:** change email (Supabase double-confirm flow), change password (verifies current via re-sign-in)
+  - [x] **Danger zone:** delete account (cancels pending orders, expires listings, wipes user via admin API)
+- [x] `/profile/[username]` — public seller profile (avatar, bio, sales, rating, member since, active listings grid)
 - [x] Meta token expiry banner on dashboard (basic)
+- [x] Stripe Connect placeholder (button disabled until Phase 6)
 - [ ] **Reminder: add `public_profile,email` Meta scope flow** to pull FB name+email for verification (split from marketing scope flow)
 
 ---
@@ -179,6 +186,11 @@
 - [x] `/api/listings/[id]` PATCH (pause/unpause) + DELETE (soft delete → expired)
 - [x] `/api/me` — current user id + email
 - [x] `/api/proof/sign` — generate signed URLs for private storage paths
+- [x] `/api/profile` GET/PATCH — own profile read/write
+- [x] `/api/account/email` — change email via Supabase double-confirm
+- [x] `/api/account/password` — change password with current-password verify
+- [x] `/api/account/delete` — wipe user via admin API
+- [x] `/api/auth/meta-disconnect` — null Meta token + pause active listings
 - [x] Storage bucket `listing-proofs` + RLS-aware signed URL access
 - [x] Force dark mode CSS overrides
 - [x] DB trigger fix (`handle_new_user`) — collision-safe usernames, error-tolerant
