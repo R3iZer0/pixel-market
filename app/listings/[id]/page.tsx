@@ -243,9 +243,14 @@ export default async function ListingDetailPage({
                 <Link href="/my-listings" className="block w-full py-2.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg text-center">Manage listings</Link>
               </div>
             ) : user ? (
-              <Link href={`/listings/${listing.id}/buy`} className="block w-full py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg text-center hover:bg-blue-700">
-                Buy now
-              </Link>
+              <div className="space-y-2">
+                <Link href={`/listings/${listing.id}/buy`} className="block w-full py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg text-center hover:bg-blue-700">
+                  Buy now
+                </Link>
+                <Link href={`/messages/listing-${listing.id}-${user.id}`} className="block w-full py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg text-center hover:bg-gray-50">
+                  Message seller / Make offer
+                </Link>
+              </div>
             ) : (
               <Link href="/login" className="block w-full py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg text-center">
                 Log in to buy

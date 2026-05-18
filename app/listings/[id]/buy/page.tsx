@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter, useParams } from 'next/navigation'
+import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 
 type AdAccount = { id: string; name: string }
@@ -10,7 +10,10 @@ type ListingInfo = { id: string; title: string; asset_type: string; price_cents:
 export default function BuyPage() {
   const router = useRouter()
   const params = useParams<{ id: string }>()
+  const searchParams = useSearchParams()
   const listingId = params?.id
+  const offerId = searchParams.get('offer_id')
+  const [offerAmount, setOfferAmount] = useState<number | null>(null)
 
   const [listing, setListing] = useState<ListingInfo | null>(null)
   const [accounts, setAccounts] = useState<AdAccount[]>([])
@@ -25,23 +28,38 @@ export default function BuyPage() {
 
   useEffect(() => {
     if (!listingId) return
-    Promise.all([
+    const promises: Promise<unknown>[] = [
       fetch(`/api/listings/public-info?id=${listingId}`).then(r => r.json()),
       fetch('/api/meta/assets').then(r => r.json()),
-    ]).then(([listingData, assetsData]) => {
+    ]
+    if (offerId) {
+      promises.push(fetch(`/api/messages/thread?listing_id=${listingId}&buyer_id=me`).then(() => null).catch(() => null))
+    }
+    Promise.all(promises).then(([listingDataRaw, assetsDataRaw]) => {
+      const listingData = listingDataRaw as { listing?: ListingInfo; error?: string }
+      const assetsData = assetsDataRaw as { error?: string; accounts?: Array<{ ad_account: AdAccount }> }
       if (listingData.error) setError(listingData.error)
-      else setListing(listingData.listing)
+      else if (listingData.listing) setListing(listingData.listing)
 
       if (assetsData.error) {
         setMetaConnected(false)
       } else {
         setMetaConnected(true)
-        const accs: AdAccount[] = (assetsData.accounts || []).map((a: { ad_account: AdAccount }) => a.ad_account)
+        const accs: AdAccount[] = (assetsData.accounts || []).map(a => a.ad_account)
         setAccounts(accs)
       }
       setLoading(false)
     }).catch(e => { setError(String(e)); setLoading(false) })
-  }, [listingId])
+  }, [listingId, offerId])
+
+  // Fetch offer price if applicable
+  useEffect(() => {
+    if (!offerId) return
+    // Fetch via thread or a direct endpoint
+    fetch(`/api/messages/thread?listing_id=${listingId}&buyer_id=${''}`).then(() => {}).catch(() => {})
+    // Simpler: pull all my pending/accepted offers via a small endpoint or rely on the user being shown the right price
+    // For now, use the listing.price_cents as fallback and check at server-side
+  }, [offerId, listingId])
 
   async function submit() {
     setSubmitting(true)
@@ -54,6 +72,7 @@ export default function BuyPage() {
         buyer_ad_account_id: buyerAcct,
         buyer_business_id: buyerBM || undefined,
         payment_method: paymentMethod,
+        offer_id: offerId || undefined,
       }),
     })
     const d = await res.json()

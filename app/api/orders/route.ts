@@ -14,7 +14,7 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthenticated' }, { status: 401 })
 
   const body = await request.json()
-  const { listing_id, buyer_ad_account_id, buyer_business_id, payment_method } = body
+  const { listing_id, buyer_ad_account_id, buyer_business_id, payment_method, offer_id } = body
 
   if (!listing_id || !buyer_ad_account_id || !payment_method) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -34,7 +34,17 @@ export async function POST(request: Request) {
   if (lerr || !listing) return NextResponse.json({ error: 'Listing not found' }, { status: 404 })
   if (listing.status !== 'active') return NextResponse.json({ error: 'Listing not active' }, { status: 400 })
   if (listing.seller_id === user.id) return NextResponse.json({ error: 'Cannot buy your own listing' }, { status: 400 })
-  if (listing.price_cents == null) return NextResponse.json({ error: 'Listing has no price' }, { status: 400 })
+  // Resolve price: offer override or listing price
+  let finalPrice = listing.price_cents
+  if (offer_id) {
+    const { data: offer } = await admin.from('price_offers').select('*').eq('id', offer_id).single()
+    if (!offer) return NextResponse.json({ error: 'Offer not found' }, { status: 404 })
+    if (offer.buyer_id !== user.id) return NextResponse.json({ error: 'Offer not yours' }, { status: 403 })
+    if (offer.listing_id !== listing.id) return NextResponse.json({ error: 'Offer/listing mismatch' }, { status: 400 })
+    if (offer.status !== 'accepted') return NextResponse.json({ error: 'Offer not accepted' }, { status: 400 })
+    finalPrice = offer.amount_cents
+  }
+  if (finalPrice == null) return NextResponse.json({ error: 'No price' }, { status: 400 })
 
   // Buyer must have Meta connected
   const { data: buyerProfile } = await admin
@@ -53,8 +63,8 @@ export async function POST(request: Request) {
 
   const buyerAcct = buyer_ad_account_id.startsWith('act_') ? buyer_ad_account_id : `act_${buyer_ad_account_id}`
 
-  const platform_fee_cents = Math.round(listing.price_cents * 0.1)
-  const seller_payout_cents = listing.price_cents - platform_fee_cents
+  const platform_fee_cents = Math.round(finalPrice * 0.1)
+  const seller_payout_cents = finalPrice - platform_fee_cents
 
   const { data: order, error: oerr } = await admin
     .from('orders')
@@ -64,7 +74,7 @@ export async function POST(request: Request) {
       seller_id: listing.seller_id,
       transaction_type: 'sale',
       payment_method,
-      amount_cents: listing.price_cents,
+      amount_cents: finalPrice,
       platform_fee_cents,
       seller_payout_cents,
       buyer_meta_ad_account_id: buyerAcct,
