@@ -66,7 +66,16 @@ export async function POST(request: Request) {
       case 'customer.subscription.created':
       case 'customer.subscription.updated': {
         const sub = event.data.object as Stripe.Subscription
-        const userId = sub.metadata?.user_id
+        let userId = sub.metadata?.user_id
+        // Fallback: lookup user via Stripe customer id
+        if (!userId && sub.customer) {
+          const { data: p } = await admin
+            .from('profiles')
+            .select('id')
+            .eq('stripe_customer_id', String(sub.customer))
+            .single()
+          if (p) userId = p.id
+        }
         if (userId) {
           const currentPeriodEnd = (sub as unknown as { current_period_end?: number }).current_period_end
           await admin
@@ -85,7 +94,15 @@ export async function POST(request: Request) {
 
       case 'customer.subscription.deleted': {
         const sub = event.data.object as Stripe.Subscription
-        const userId = sub.metadata?.user_id
+        let userId = sub.metadata?.user_id
+        if (!userId && sub.customer) {
+          const { data: p } = await admin
+            .from('profiles')
+            .select('id')
+            .eq('stripe_customer_id', String(sub.customer))
+            .single()
+          if (p) userId = p.id
+        }
         if (userId) {
           await admin
             .from('profiles')
