@@ -181,6 +181,7 @@ export default async function DashboardPage() {
           <Link prefetch href="/orders" className="px-4 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50">My orders</Link>
           <Link prefetch href="/sales" className="px-4 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50">My sales</Link>
           <Link prefetch href="/messages" className="px-4 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50">Messages</Link>
+          <Link prefetch href="/billing" className="px-4 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50">Billing</Link>
           <Link prefetch href="/settings" className="px-4 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50">Settings</Link>
         </div>
       </div>

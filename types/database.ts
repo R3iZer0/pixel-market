@@ -259,6 +259,7 @@ export type Database = {
           seller_payout_cents: number | null
           seller_wallet_address: string | null
           status: string
+          stripe_checkout_session_id: string | null
           stripe_payment_intent_id: string | null
           stripe_transfer_id: string | null
           transaction_type: string
@@ -285,6 +286,7 @@ export type Database = {
           seller_payout_cents?: number | null
           seller_wallet_address?: string | null
           status?: string
+          stripe_checkout_session_id?: string | null
           stripe_payment_intent_id?: string | null
           stripe_transfer_id?: string | null
           transaction_type: string
@@ -311,6 +313,7 @@ export type Database = {
           seller_payout_cents?: number | null
           seller_wallet_address?: string | null
           status?: string
+          stripe_checkout_session_id?: string | null
           stripe_payment_intent_id?: string | null
           stripe_transfer_id?: string | null
           transaction_type?: string
@@ -354,6 +357,79 @@ export type Database = {
           },
           {
             foreignKeyName: "orders_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "public_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payouts: {
+        Row: {
+          amount_cents: number
+          created_at: string | null
+          crypto_tx_hash: string | null
+          failure_reason: string | null
+          id: string
+          notes: string | null
+          order_id: string
+          payout_method: string
+          releasable_at: string | null
+          seller_id: string
+          sent_at: string | null
+          status: string
+          stripe_transfer_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          amount_cents: number
+          created_at?: string | null
+          crypto_tx_hash?: string | null
+          failure_reason?: string | null
+          id?: string
+          notes?: string | null
+          order_id: string
+          payout_method: string
+          releasable_at?: string | null
+          seller_id: string
+          sent_at?: string | null
+          status?: string
+          stripe_transfer_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          amount_cents?: number
+          created_at?: string | null
+          crypto_tx_hash?: string | null
+          failure_reason?: string | null
+          id?: string
+          notes?: string | null
+          order_id?: string
+          payout_method?: string
+          releasable_at?: string | null
+          seller_id?: string
+          sent_at?: string | null
+          status?: string
+          stripe_transfer_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payouts_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: true
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payouts_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payouts_seller_id_fkey"
             columns: ["seller_id"]
             isOneToOne: false
             referencedRelation: "public_profiles"
@@ -459,7 +535,13 @@ export type Database = {
           preferred_chain: string | null
           rating: number | null
           stripe_account_id: string | null
+          stripe_connect_charges_enabled: boolean | null
+          stripe_connect_payouts_enabled: boolean | null
+          stripe_customer_id: string | null
+          subscription_current_period_end: string | null
+          subscription_status: string | null
           total_sales: number | null
+          trial_ends_at: string | null
           username: string
         }
         Insert: {
@@ -477,7 +559,13 @@ export type Database = {
           preferred_chain?: string | null
           rating?: number | null
           stripe_account_id?: string | null
+          stripe_connect_charges_enabled?: boolean | null
+          stripe_connect_payouts_enabled?: boolean | null
+          stripe_customer_id?: string | null
+          subscription_current_period_end?: string | null
+          subscription_status?: string | null
           total_sales?: number | null
+          trial_ends_at?: string | null
           username: string
         }
         Update: {
@@ -495,7 +583,13 @@ export type Database = {
           preferred_chain?: string | null
           rating?: number | null
           stripe_account_id?: string | null
+          stripe_connect_charges_enabled?: boolean | null
+          stripe_connect_payouts_enabled?: boolean | null
+          stripe_customer_id?: string | null
+          subscription_current_period_end?: string | null
+          subscription_status?: string | null
           total_sales?: number | null
+          trial_ends_at?: string | null
           username?: string
         }
         Relationships: []
@@ -565,6 +659,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      system_settings: {
+        Row: {
+          key: string
+          updated_at: string | null
+          value: string | null
+        }
+        Insert: {
+          key: string
+          updated_at?: string | null
+          value?: string | null
+        }
+        Update: {
+          key?: string
+          updated_at?: string | null
+          value?: string | null
+        }
+        Relationships: []
       }
       trade_offers: {
         Row: {
@@ -839,6 +951,7 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
 // Convenience aliases
 export type Profile = Database['public']['Tables']['profiles']['Row']
 export type Listing = Database['public']['Tables']['listings']['Row']
@@ -848,6 +961,7 @@ export type Message = Database['public']['Tables']['messages']['Row']
 export type Review = Database['public']['Tables']['reviews']['Row']
 export type Dispute = Database['public']['Tables']['disputes']['Row']
 export type PriceOffer = Database['public']['Tables']['price_offers']['Row']
+export type Payout = Database['public']['Tables']['payouts']['Row']
 
 export type ListingWithSeller = Listing & { seller: Profile }
 export type OrderWithDetails = Order & { listing: Listing; buyer: Profile; seller: Profile }

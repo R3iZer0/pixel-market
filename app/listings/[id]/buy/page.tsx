@@ -78,7 +78,12 @@ export default function BuyPage() {
     const d = await res.json()
     setSubmitting(false)
     if (d.error) { setError(d.error); return }
-    // Pass BM through query string so order page can use at test-pay
+    // If Stripe Checkout URL returned, send buyer to Stripe to pay
+    if (d.checkout_url) {
+      window.location.href = d.checkout_url
+      return
+    }
+    // Otherwise fall back to order detail (e.g. Coinbase flow placeholder)
     const q = buyerBM ? `?bm=${encodeURIComponent(buyerBM)}` : ''
     router.push(`/orders/${d.order.id}${q}`)
   }
