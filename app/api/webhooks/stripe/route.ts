@@ -32,6 +32,33 @@ export async function POST(request: Request) {
         const session = event.data.object as Stripe.Checkout.Session
         const meta = session.metadata || {}
 
+        // Subscription checkout — also sync sub state directly (don't rely on later sub event)
+        if (session.mode === 'subscription' && session.subscription) {
+          const subId = typeof session.subscription === 'string' ? session.subscription : session.subscription.id
+          const sub = await stripe.subscriptions.retrieve(subId)
+          let userId = meta.user_id || sub.metadata?.user_id
+          if (!userId && session.customer) {
+            const { data: p } = await admin
+              .from('profiles')
+              .select('id')
+              .eq('stripe_customer_id', String(session.customer))
+              .single()
+            if (p) userId = p.id
+          }
+          if (userId) {
+            const cpe = (sub.items.data[0] as unknown as { current_period_end?: number })?.current_period_end
+              || (sub as unknown as { current_period_end?: number }).current_period_end
+            await admin
+              .from('profiles')
+              .update({
+                subscription_status: sub.status,
+                subscription_current_period_end: cpe ? new Date(cpe * 1000).toISOString() : null,
+                trial_ends_at: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null,
+              })
+              .eq('id', userId)
+          }
+        }
+
         if (meta.type === 'order' && meta.order_id) {
           // Buyer paid for a listing
           await admin

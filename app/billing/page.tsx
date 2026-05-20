@@ -41,14 +41,19 @@ function BillingInner() {
   const [busy, setBusy] = useState<string | null>(null)
 
   useEffect(() => {
-    Promise.all([
-      fetch('/api/profile').then(r => r.json()),
-      fetch('/api/payouts').then(r => r.json()).catch(() => ({ payouts: [] })),
-    ]).then(([prof, pays]) => {
-      setProfile(prof.profile || null)
-      setPayouts(pays.payouts || [])
-      setLoading(false)
-    }).catch(() => setLoading(false))
+    // Always sync from Stripe first so we get latest sub/connect state even if webhook lagged
+    fetch('/api/billing/sync', { method: 'POST' })
+      .catch(() => {})
+      .finally(() => {
+        Promise.all([
+          fetch('/api/profile').then(r => r.json()),
+          fetch('/api/payouts').then(r => r.json()).catch(() => ({ payouts: [] })),
+        ]).then(([prof, pays]) => {
+          setProfile(prof.profile || null)
+          setPayouts(pays.payouts || [])
+          setLoading(false)
+        }).catch(() => setLoading(false))
+      })
   }, [])
 
   async function startSubscription() {
