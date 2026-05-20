@@ -1,27 +1,28 @@
 # PixelMarket — Project Context
 
-> Source of truth for what's built, decided, and what's next. Read this first when resuming work.
+> Source of truth. Read first when resuming.
 
-Last updated: 2026-05-18
+Last updated: 2026-05-20
 
 ---
 
 ## What This Is
 
-Peer-to-peer marketplace for **Meta advertising assets** (pixels, custom audiences, lookalikes, engagement audiences). Fully automated transfer via Meta Graph API. **Sale-only** (trade deprioritized for v1). **10% platform fee.**
+Peer-to-peer marketplace for **Meta advertising assets** (pixels, custom audiences, lookalikes, engagement audiences). Automated transfer via Meta Graph API. **Sale-only.** **No transaction fee** — revenue from **$30/mo subscription** (3-day free trial, both buyers and sellers required).
 
 ---
 
-## Live URLs
+## Live URLs / IDs
 
 | Resource | URL |
 |---|---|
 | Production | https://pixel-market-sable.vercel.app |
 | GitHub | https://github.com/R3iZer0/pixel-market |
-| Supabase project | https://supabase.com/dashboard/project/yonhlsdwvjpqoqrtxawb |
-| Vercel project | https://vercel.com/royy35653w234-7538s-projects/pixel-market |
+| Supabase project ref | `yonhlsdwvjpqoqrtxawb` |
+| Vercel project | royy35653w234-7538s-projects/pixel-market |
 | Meta App ID | `1856638428626320` |
-| Storage bucket | `listing-proofs` (PRIVATE) |
+| Storage bucket | `listing-proofs` (private) |
+| Stripe mode | **TEST** (test keys configured) |
 
 ---
 
@@ -31,216 +32,204 @@ Peer-to-peer marketplace for **Meta advertising assets** (pixels, custom audienc
 |---|---|
 | Framework | Next.js 16 (App Router, Turbopack) |
 | Lang | TypeScript |
-| Styling | Tailwind v4 — forced dark mode via globals.css overrides |
-| Icons | lucide-react |
-| Auth | Supabase Auth (email; custom Meta OAuth separate) |
+| Styling | Tailwind v4 + forced dark mode |
+| Auth | Supabase Auth (email) + custom Meta OAuth |
 | Database | Supabase PostgreSQL |
-| Storage | Supabase Storage (private bucket, signed URLs) |
+| Storage | Supabase Storage (private, signed URLs) |
 | Meta API | Graph API v19.0 |
+| **Payments** | **Stripe** (Checkout, Connect Express, Subscriptions) |
 | Hosting | Vercel |
-| Payments | Stripe Connect + Coinbase Commerce — **NOT YET WIRED**, test-pay stub in place |
 
-### Next.js 16 Gotchas
-- `middleware.ts` → `proxy.ts` with `export async function proxy()` not `middleware()`
-- Client components that touch env-dependent code must **lazy-init inside event handlers** (`app/login/page.tsx` `getClient()` pattern) — `force-dynamic` doesn't stop prerender of `'use client'` shells
-- Database views (`public_listings`, `public_profiles`) NOT in generated types — cast with `(supabase as any)`
-
----
-
-## Database
-
-7 tables (profiles, listings, orders, trade_offers, messages, reviews, disputes) + 2 public views.
-
-### Public views (anonymity layer)
-- `public_profiles` — username, display_name, avatar, bio, is_verified, rating, total_sales, created_at (NO email/token/business_id)
-- `public_listings` — full listing data + seller fields, BUT `source_extra` strips `origin_pixel`, `origin_details`, `data_source` to hide pixel IDs from non-buyers
-
-### Critical fixes applied via SQL editor (not in migrations)
-1. **`handle_new_user` trigger rewritten** — collision-safe usernames, RLS bypass, error-tolerant
-2. **`public_profiles` + `public_listings` views** for anonymity
-3. **Dropped "Public read profiles" RLS policy** (replaced by view)
-4. **Storage bucket `listing-proofs` created via Dashboard** (initially public, then switched to private)
-5. **Storage policies** for upload/delete/read
+### Important Next.js 16 + library gotchas
+- `proxy.ts` not `middleware.ts`; export `proxy()` not `middleware()`
+- Client components with env-dependent libs need **lazy init inside handlers** (Supabase + Stripe both Proxy-wrapped)
+- `useSearchParams` requires `<Suspense>` wrapper at build time
+- DB views (`public_listings`, `public_profiles`) not in generated types — cast with `(supabase as any)`
 
 ---
 
-## Auth Flows
-
-**Two separate:**
-
-1. **App Login (Supabase Auth)** — email/password works. Google button untested. Facebook removed from login (scope conflict).
-2. **Meta Connect (custom OAuth)** — `/api/auth/meta-connect` → `facebook.com/dialog/oauth` directly → `/api/meta/callback` → exchanges for 60-day long-lived token → stores via admin client. Scopes: `ads_read,ads_management,business_management`. **Reminder: add `public_profile,email` flow** to pull FB name+email for verification.
-
----
-
-## Phase Status (see TASKS.md for full detail)
+## Phase Status
 
 | Phase | Status |
 |---|---|
 | 1 — Foundation | ✅ |
 | 2 — Auth | ✅ |
-| 2.5 — Legal pages | ✅ |
+| 2.5 — Legal | ✅ |
 | 3 — Browse + Detail | ✅ |
 | 4 — Listing Wizard (6 steps + proofs) | ✅ |
-| 5 — Meta Transfer | 🟡 partial — audiences confirmed working, pixel untested, no token cron |
-| 6 — Payments | 🔜 **next** — test-pay stub works, Stripe+Coinbase not wired |
-| 7 — Orders flow | ✅ mostly (dispute + 7-day auto-release not yet) |
-| 8 — Trade offers | ⏸ deprioritized (sale-only v1) |
-| 9 — Messaging | ❌ |
-| 10 — Settings/Profile | ❌ (token banner only) |
+| 5 — Meta Transfer | 🟡 audiences confirmed, pixel untested, no token cron |
+| **6 — Payments** | 🟡 **subscription works, buyer checkout works, payouts table tracks; cron/gating pending** |
+| 7 — Orders Flow | ✅ mostly (dispute + 7-day auto-release pending) |
+| 8 — Trade | ⏸ skipped |
+| 9 — Messaging + Offers | ✅ |
+| 10 — Settings + Profile | ✅ |
 | 11 — Reviews | ❌ |
 | 12 — Polish/Launch | ❌ |
-| 13 — Meta App Review | ❌ (legal pages + endpoint ready) |
+| 13 — Meta App Review | ❌ |
 
 ---
 
-## File Map
+## Payments Architecture (Phase 6)
 
+### Subscription flow
 ```
-pixel-market/
-├── app/
-│   ├── layout.tsx, page.tsx (landing), globals.css (dark mode)
-│   ├── login/, signup/, dashboard/
-│   ├── auth/callback/route.ts                 # Supabase OAuth handler
-│   ├── browse/page.tsx                        # public grid + filters
-│   ├── listings/
-│   │   ├── [id]/page.tsx                      # public detail w/ proofs
-│   │   ├── [id]/buy/page.tsx                  # buyer picks ad acct/BM/payment
-│   │   └── new/page.tsx                       # 6-step wizard
-│   ├── my-listings/                           # seller dashboard + actions
-│   ├── orders/                                # buyer list + /[id] detail (stepper, test-pay, confirm)
-│   ├── sales/                                 # seller incoming orders
-│   ├── dev/test-transfer/                     # manual transfer trigger
-│   ├── legal/                                 # privacy, terms, data-deletion
-│   └── api/
-│       ├── auth/                              # signout, meta-connect
-│       ├── me/                                # current user
-│       ├── meta/
-│       │   ├── assets/                        # list pixels + audiences
-│       │   ├── asset-details/                 # deep enrichment per asset
-│       │   ├── callback/                      # FB OAuth callback
-│       │   └── transfer/                      # share asset to buyer
-│       ├── listings/                          # POST create, mine, public-info, [id] PATCH/DELETE
-│       ├── orders/                            # POST create, [id] GET, test-pay, confirm
-│       ├── upload/proof/                      # private storage upload
-│       ├── proof/sign/                        # signed URL for owner or active-listing viewers
-│       └── data-deletion/                     # Meta signed_request callback
-├── lib/
-│   ├── supabase/{client,server,admin}.ts
-│   ├── listing-constants.ts                   # CATEGORIES, SOURCE_TYPES, GEO_OPTIONS
-│   └── utils.ts
-├── proxy.ts                                   # auth middleware (Next.js 16 naming)
-├── types/{database,public-listing}.ts
-├── supabase/migrations/
-├── TASKS.md
-└── CONTEXT.md (this file)
+User clicks "Start trial" on /billing
+  → /api/billing/checkout creates Stripe Checkout (subscription mode, 3-day trial)
+  → user pays via Stripe Checkout
+  → webhook customer.subscription.created/updated → updates profile.subscription_status
+  → fallback: /api/billing/sync called on /billing page load = pulls truth from Stripe
 ```
 
+### Buy flow (no platform fee in test, sub funds the platform)
+```
+Buyer clicks "Buy now" on listing → /listings/[id]/buy
+  → picks ad account + BM (if pixel)
+  → POST /api/orders { listing_id, buyer_ad_account_id, payment_method: 'stripe' }
+  → server creates pending_payment order + Stripe Checkout session
+  → returns checkout_url → window.location redirects to Stripe
+  → buyer pays
+  → webhook checkout.session.completed → order = paid → triggers /api/meta/transfer
+  → asset shared via Meta API → status = transferred
+  → buyer clicks "Confirm I received it" → order = completed
+  → payouts row created (status=pending, releasable_at=NOW+7days)
+```
+
+### Seller payout flow (NOT YET RUNNING)
+```
+Daily cron checks payouts where releasable_at <= now
+  → flips status to 'releasable'
+Admin or cron triggers payout:
+  - Fiat: stripe.transfers.create({ amount, destination: stripe_account_id })
+  - Crypto: manual send to profiles.crypto_wallet, save tx_hash
+Mark status='sent'
+```
+
+### Stripe Connect (sellers receive USD)
+- `POST /api/billing/connect/start` creates Express account + onboarding link
+- Seller clicks "Set up Stripe payout account" on /billing
+- Stripe-hosted KYC, ~5min
+- `GET /api/billing/connect/return` syncs `charges_enabled` / `payouts_enabled` flags
+
+### Webhook events handled at `/api/webhooks/stripe`
+- `checkout.session.completed` — order paid (calls Meta transfer) OR subscription synced
+- `customer.subscription.created/updated/deleted` — sub status to profiles
+- `account.updated` — Connect status to profiles
+- HMAC verified via `STRIPE_WEBHOOK_SECRET`
+- Fallback: lookup user via `stripe_customer_id` when metadata missing
+
+### Pending in Phase 6
+- Subscription gating on listing creation + buying (block if no active sub)
+- Daily cron: flip payouts to releasable + dispatch
+- Coinbase Commerce crypto checkout + webhook
+- Auto-cancel pending_payment orders after 30min
+
 ---
 
-## End-to-End Flow (working today, no real payments)
+## Database
 
-1. Seller signs up (email)
-2. Seller connects Meta (long-lived token stored)
-3. Seller creates listing via 6-step wizard:
-   - Pick asset (live from Meta)
-   - Smart per-asset details (events, hosts, lookalike origin, etc.)
-   - Categorize
-   - Upload proof screenshots (private storage, signed URLs)
-   - Set price (sale only)
-   - Publish
-4. Buyer signs up + connects Meta
-5. Buyer browses → opens listing → "Buy now"
-6. Buy page: picks buyer ad account (+ BM for pixels), payment method (Stripe/Coinbase)
-7. Creates order (`pending_payment`)
-8. Order detail page → "Test: simulate payment + transfer" button → marks paid → `/api/meta/transfer` fires → status `transferred`
-9. Buyer clicks "Confirm I received it" → status `completed`, listing → `sold`, seller `total_sales++`
+### Tables
+- `profiles` — user + Meta token + Stripe customer + Stripe Connect + sub status
+- `listings`, `orders`, `messages` (listing OR order scoped), `price_offers`, `trade_offers`, `reviews`, `disputes`
+- **`payouts`** — what's owed to each seller per order (status: pending/releasable/sent/failed/on_hold, releasable_at, sent_at)
+- **`system_settings`** — k/v for Stripe product/price IDs (lazy-created on first checkout)
 
----
+### Views (with `security_invoker = off`)
+- `public_profiles` — strips email/token/business_id
+- `public_listings` — strips Meta IDs from `source_extra`, joins seller fields
 
-## Meta Transfer API Behavior
-
-| Asset | Endpoint | Notes |
-|---|---|---|
-| `custom_audience` / `engagement_audience` / `lookalike_audience` | `POST /{audience_id}/adaccounts` body `{adaccounts: [numeric_id]}` (no `act_` prefix in array, but path uses `act_`) | Confirmed working. Same-FB-user shares may silently no-op (`sharing_data: []`). |
-| `pixel` | `POST /{pixel_id}/shared_accounts` body `{business: BM_ID, account_id: act_XXX}` | Untested. Requires BM on both seller and buyer. |
-
-Lookalikes share **directly** (they ARE custom audience subtype) — no recreation flow needed. Earlier attempt at recreating via `origin_audience_id` failed with `#2654 Audience Permission Needed`.
-
----
-
-## Privacy Model
-
-- Bucket `listing-proofs` = **private**
-- Files at `{user_id}/{timestamp}-{slot}-{uuid}.ext`
-- DB stores paths only
-- `/api/proof/sign` issues signed URLs (1h) — checks: owner OR path appears in active listing's `source_extra.proofs`
-- Public views strip Meta IDs, payment IDs, tokens
-- Anonymous seller display on browse/detail: only `@username`, rating, sales count
-- Real names/emails NEVER shown to other users
+### Critical SQL applied via dashboard (not in migrations)
+- `handle_new_user` trigger fixed (collision-safe, RLS-safe)
+- `public_profiles` + `public_listings` views with `security_invoker = off`
+- Tightened profile RLS (dropped blanket read)
+- `messages.listing_id` nullable + new RLS for thread parties
+- `price_offers` table
+- Subscription columns + `payouts` + `system_settings` tables
 
 ---
 
 ## Env Vars (set in all 3 Vercel envs)
 
 ```
+# Supabase
 NEXT_PUBLIC_SUPABASE_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY
 SUPABASE_SERVICE_ROLE_KEY
+
+# Meta
 META_APP_ID
 META_APP_SECRET
 NEXT_PUBLIC_META_APP_ID
+
+# Stripe (TEST mode)
+STRIPE_SECRET_KEY
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+STRIPE_WEBHOOK_SECRET
+
+# App
 NEXT_PUBLIC_APP_URL
 
-# Not yet wired:
-STRIPE_SECRET_KEY
-STRIPE_WEBHOOK_SECRET
-NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+# Not yet wired
 COINBASE_COMMERCE_API_KEY
 COINBASE_COMMERCE_WEBHOOK_SECRET
 ```
 
 ---
 
-## Meta App Setup (must stay configured)
+## File Map (latest)
 
-**Valid OAuth Redirect URIs** (Facebook Login → Settings):
-- `https://yonhlsdwvjpqoqrtxawb.supabase.co/auth/v1/callback`
-- `https://pixel-market-sable.vercel.app/api/meta/callback`
-
-**App Settings → Basic** (when going Live):
-- Privacy URL: `https://pixel-market-sable.vercel.app/legal/privacy`
-- ToS URL: `https://pixel-market-sable.vercel.app/legal/terms`
-- Data Deletion URL: `https://pixel-market-sable.vercel.app/legal/data-deletion`
-- Data Deletion Callback: `https://pixel-market-sable.vercel.app/api/data-deletion`
-- App Domains: `yonhlsdwvjpqoqrtxawb.supabase.co`, `pixel-market-sable.vercel.app`
-
-**Dev mode constraint:** marketing scopes only available to app admins/testers until App Review approved.
-
----
-
-## Open Tech Debt / Bugs
-
-- Token refresh cron not built — tokens silently expire at 60 days
-- Google OAuth untested end-to-end
-- Pixel transfer untested (requires BM on both sides)
-- Some Meta API responses returning `sharing_data: []` for same-FB-user shares — real cross-user shares may behave differently
-- No error boundary on Meta API failures
-- No rate limit handling
-- `public_listings` view + Supabase types: cast with `(client as any)` (no view types generated)
-- Buyer Business Manager ID for pixel orders not persisted (passed through query string)
+```
+pixel-market/
+├── app/
+│   ├── billing/page.tsx                # subscription + Connect + earnings
+│   ├── dashboard/page.tsx
+│   ├── browse/, listings/[id]/, listings/[id]/buy/, listings/new/
+│   ├── orders/, orders/[id]/, sales/, my-listings/
+│   ├── messages/, messages/[threadId]/
+│   ├── profile/[username]/, settings/, legal/{privacy,terms,data-deletion}/
+│   ├── auth/callback/
+│   ├── dev/test-transfer/
+│   └── api/
+│       ├── billing/{checkout,portal,sync}/, billing/connect/{start,return}/
+│       ├── webhooks/stripe/
+│       ├── orders/, orders/[id]/, orders/[id]/{confirm,test-pay}/
+│       ├── listings/, listings/mine/, listings/public-info/, listings/[id]/
+│       ├── messages/, messages/thread/, offers/, offers/[id]/{accept,reject,withdraw}/
+│       ├── meta/{assets,asset-details,callback,transfer}/
+│       ├── auth/{signout,meta-connect,meta-disconnect}/
+│       ├── account/{email,password,delete}/
+│       ├── payouts/, profile/, proof/sign/, upload/proof/
+│       ├── me/, data-deletion/
+├── lib/
+│   ├── supabase/{client,server,admin}.ts
+│   ├── stripe.ts                       # lazy Proxy-wrapped client + product/price helpers
+│   ├── listing-constants.ts, utils.ts
+├── proxy.ts
+├── types/{database,public-listing}.ts
+├── TASKS.md, CONTEXT.md
+```
 
 ---
 
 ## How to Resume
 
-1. Read this file
-2. Read `TASKS.md` for granular phase tasks
-3. Run `npm run dev` from `/Users/reinexhipi/pixel-market`
-4. Deploy: `vercel --prod --yes`
-5. Schema changes: edit `supabase/migrations/*.sql` AND apply manually in Supabase SQL editor
-6. Regenerate types: `SUPABASE_ACCESS_TOKEN=<tok> supabase gen types typescript --project-id yonhlsdwvjpqoqrtxawb > types/database.ts` then append aliases
-7. Manual storage bucket setup is required for fresh projects
+1. Read CONTEXT.md + TASKS.md
+2. `cd /Users/reinexhipi/pixel-market && npm run dev`
+3. Deploy: `vercel --prod --yes`
+4. Schema changes: edit `supabase/migrations/*.sql` AND apply via SQL editor
+5. Regen types: `SUPABASE_ACCESS_TOKEN=... supabase gen types typescript --project-id yonhlsdwvjpqoqrtxawb > types/database.ts` + re-append aliases
+
+---
+
+## Open Tech Debt / Bugs
+
+- Token refresh cron not built (60-day Meta expiry)
+- Pixel transfer untested (requires BM both sides)
+- Subscription gating not enforced anywhere yet
+- Payout dispatcher (cron + sender) not built
+- Auto-cancel orders not built
+- Coinbase Commerce not wired
+- No retry logic on Meta API transient failures
+- `current_period_end` moved from subscription root → `items.data[0]` in newer Stripe API; code handles both via fallback
 
 ---
 
@@ -248,15 +237,16 @@ COINBASE_COMMERCE_WEBHOOK_SECRET
 
 | Decision | Reason |
 |---|---|
-| Custom Meta OAuth (not Supabase FB provider) | Supabase auto-adds `email` scope → conflicts with Marketing API |
-| Lazy supabase client init in client components | Next.js 16 Turbopack prerenders `'use client'` shells |
-| `proxy.ts` not `middleware.ts` | Next.js 16 renamed convention |
-| 60-day long-lived token | FB max; refresh cron needed before expiry |
-| Admin client for token writes | RLS-safe server-only updates |
-| Username auto-generated + collision handled | Email-prefix collisions broke first signup |
-| Sale-only v1 (no trade) | User decision — simplifies wizard + payment flow |
-| Storage bucket private + signed URLs | Proof screenshots contain business info |
-| Lookalike share = direct audience share (not recreation) | Recreation flow needed BM-to-BM permissions |
-| Adaccounts API wants raw numeric ID in array | Meta's quirk — `act_` prefix in path, numeric in array body |
-| Force dark mode globally via CSS overrides | User OS in dark mode + Tailwind defaulting to light = unreadable |
-| Public views over RLS-tightening | Easier to maintain than column-level grants |
+| No transaction fee, $30/mo sub | User decision, simpler model |
+| Stripe Connect Express for seller payouts | Stripe handles KYC + bank + tax |
+| Subscription required for both sides | Pricing model — both buyer and seller pay |
+| 3-day free trial | User decision |
+| /api/billing/sync as belt-and-suspenders | Don't rely on webhook timing for sub state |
+| Proxy-wrapped lazy Stripe client | Env vars not present at Next.js build collect-data step |
+| Custom Meta OAuth (not Supabase FB) | Email scope conflict with marketing scopes |
+| Lookalike share = direct (not recreation) | Recreation needs BM-to-BM perms |
+| Adaccounts API needs numeric ID in array, `act_` prefix in path | Meta quirk |
+| `security_invoker = off` on public views | Cross-user reads need to bypass profile RLS |
+| Force dark mode globally | OS dark mode + Tailwind defaults = unreadable |
+| Sale-only v1 | No trade — simpler payment flow |
+| Lazy-created Stripe product/price | Cached in `system_settings` so no manual setup step |

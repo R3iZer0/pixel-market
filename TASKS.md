@@ -90,19 +90,35 @@
 
 ---
 
-## Phase 6 — Checkout & Payments (NEXT)
-- [x] `POST /api/orders` — create pending_payment order (with buyer ad acct + payment method)
-- [x] `/listings/[id]/buy` — buyer ad-account picker + BM picker for pixels, enforces Meta connected
-- [x] **DEV** `POST /api/orders/[id]/test-pay` — simulate payment success + trigger transfer
-- [ ] Stripe Connect
-  - [ ] Seller onboarding flow (`/settings` → Connect Stripe)
-  - [ ] Stripe Checkout session (card payment)
-  - [ ] `POST /api/webhooks/stripe`
+## Phase 6 — Checkout & Payments (in progress)
+> Business model: **no transaction fee**, $30/mo subscription, both sides pay. Buyer pays platform via Stripe Checkout. Platform holds 7 days then pays seller via Stripe Connect (fiat) or manual crypto.
+- [x] `POST /api/orders` — create pending_payment order + Stripe Checkout session if stripe payment_method
+- [x] `/listings/[id]/buy` — buyer ad-account picker + BM picker, redirects to Stripe Checkout
+- [x] **DEV** `POST /api/orders/[id]/test-pay` — simulate payment success + trigger transfer (still useful for crypto fallback)
+- [x] **Subscription** ($30/mo, 3-day trial)
+  - [x] `lib/stripe.ts` — lazy Stripe client, lazy-create product/price on first use, cached in `system_settings`
+  - [x] `POST /api/billing/checkout` — subscription Checkout session
+  - [x] `POST /api/billing/portal` — Stripe customer portal
+  - [x] `POST /api/billing/sync` — pulls truth from Stripe (fallback if webhook missed)
+- [x] **Stripe Connect Express** for seller payouts
+  - [x] `POST /api/billing/connect/start` — creates Express account + onboarding link
+  - [x] `GET /api/billing/connect/return` — return URL handler, syncs charges_enabled/payouts_enabled
+- [x] **Stripe Webhook** `/api/webhooks/stripe` — HMAC verified, handles:
+  - [x] `checkout.session.completed` → order paid + Meta transfer fired, OR subscription synced
+  - [x] `customer.subscription.created/updated/deleted` → subscription status to profiles
+  - [x] `account.updated` → Connect charges/payouts enabled
+  - [x] Fallback: customer-id lookup when metadata.user_id missing
+- [x] `/billing` page UI — subscription mgmt, Connect onboarding, earnings + payout history
+- [x] DB: `profiles.stripe_customer_id`, `subscription_status`, `subscription_current_period_end`, `trial_ends_at`, `stripe_connect_charges_enabled`, `stripe_connect_payouts_enabled`
+- [x] DB: `system_settings` (k/v for Stripe product/price IDs), `payouts` table, `orders.stripe_checkout_session_id`
 - [ ] Coinbase Commerce crypto
   - [ ] Checkout: QR + 15min countdown
   - [ ] `POST /api/webhooks/coinbase`
+- [ ] **Subscription gating** — block listing creation + buying if no active sub
+- [ ] **Daily cron** — flip payouts from pending → releasable after `releasable_at` passes
+- [ ] **Payout dispatcher** — Stripe transfers for fiat sellers; manual UI for crypto
+- [ ] Auto-cancel orders after 30min if no payment
 - [x] Order state machine: `pending_payment → paid → transferring → transferred → completed`
-- [ ] Auto-cancel after 30min if no payment
 
 ---
 
@@ -209,6 +225,10 @@
 - [x] Public views fixed with `security_invoker = off` so cross-user reads work despite tight profile RLS
 - [x] `/api/messages` + `/api/messages/thread` + `/api/offers/*` — full messaging + offers backend
 - [x] Schema: `messages.listing_id` + nullable `order_id` + `price_offers` table
+- [x] `/api/payouts` — seller's payout history
+- [x] `/api/billing/sync` — Stripe truth sync (works even if webhook missed)
+- [x] Stripe `subscription_data.metadata.user_id` flows through to subscription metadata + we have customer-id fallback
+- [x] Perf: dashboard stripped to shell + Suspense, parallel signed URLs on listing detail, 60s Meta API cache, polling skips when tab hidden
 - [x] Storage bucket `listing-proofs` + RLS-aware signed URL access
 - [x] Force dark mode CSS overrides
 - [x] DB trigger fix (`handle_new_user`) — collision-safe usernames, error-tolerant
