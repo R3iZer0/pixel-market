@@ -1,7 +1,18 @@
 import Stripe from 'stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
 
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
+let _stripe: Stripe | null = null
+function getStripe(): Stripe {
+  if (!_stripe) _stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
+  return _stripe
+}
+
+export const stripe: Stripe = new Proxy({} as Stripe, {
+  get(_t, prop) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (getStripe() as any)[prop]
+  },
+})
 
 export const SUBSCRIPTION_PRICE_USD = 30
 export const SUBSCRIPTION_TRIAL_DAYS = 3

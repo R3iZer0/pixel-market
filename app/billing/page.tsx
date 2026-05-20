@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 
@@ -25,6 +25,14 @@ type Payout = {
 }
 
 export default function BillingPage() {
+  return (
+    <Suspense fallback={<div className="p-10 text-gray-500">Loading…</div>}>
+      <BillingInner />
+    </Suspense>
+  )
+}
+
+function BillingInner() {
   const sp = useSearchParams()
   const status = sp.get('status')
   const [profile, setProfile] = useState<Profile | null>(null)
